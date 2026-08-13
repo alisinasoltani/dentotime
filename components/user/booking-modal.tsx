@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import axios from "axios";
+import type { AxiosResponse } from "axios";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -11,10 +13,10 @@ import {
     differenceInCalendarMonths
 } from "date-fns-jalali";
 import { format as gFormat } from "date-fns";
-import { ChevronRight, ChevronLeft, AlertCircle, Loader2 } from "lucide-react";
+import { ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import api from "@/lib/api";
+import { restoreSession } from "@/lib/auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 const bookingSchema = z.object({
     service: z.string().min(1, "لطفا یک سرویس را انتخاب کنید"),
@@ -22,6 +24,7 @@ const bookingSchema = z.object({
     phone: z.string().regex(/^09\d{9}$/, "شماره موبایل معتبر نیست (مثال: 09123456789)"),
     date: z.string().min(1, "لطفا یک روز را از تقویم انتخاب کنید"),
     time: z.string().min(1, "ساعت مراجعه را انتخاب کنید"),
+    captchaAnswer: z.string().optional(),
 });
 
 type BookingFormValues = z.infer<typeof bookingSchema>;
@@ -42,16 +45,38 @@ interface BookingModalProps {
     onSuccess: () => void;
 }
 
+interface AppointmentSlot {
+    id: number;
+    date?: string;
+    start_at: string;
+    end_at: string;
+}
+
+interface PaginatedSlots {
+    results: AppointmentSlot[];
+    next: string | null;
+}
+
+interface CaptchaChallenge {
+    challenge_id: string;
+    image_data_url: string;
+    expires_in: number;
+}
+
 export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModalProps) {
     const today = startOfDay(new Date());
     const [currentMonth, setCurrentMonth] = useState(today);
     const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(null);
 
-    const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+    const [availableSlots, setAvailableSlots] = useState<AppointmentSlot[]>([]);
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
     const idempotencyKeyRef = useRef<string | null>(null);
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [authResolved, setAuthResolved] = useState(false);
+    const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null);
+    const [isLoadingCaptcha, setIsLoadingCaptcha] = useState(false);
 
     const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<BookingFormValues>({
         resolver: zodResolver(bookingSchema),
@@ -60,11 +85,33 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
 
     const watchDate = watch("date");
 
-    // دریافت اطلاعات کاربر برای پر کردن خودکار نام و شماره
+    const loadCaptcha = useCallback(async () => {
+        setIsLoadingCaptcha(true);
+        try {
+            const response = await api.post<CaptchaChallenge>("/appointments/captcha/", {});
+            setCaptcha(response.data);
+            setValue("captchaAnswer", "");
+        } catch {
+            setCaptcha(null);
+            toast.error("دریافت تصویر امنیتی ناموفق بود.");
+        } finally {
+            setIsLoadingCaptcha(false);
+        }
+    }, [setValue]);
+
+    // بررسی نشست و پرکردن اطلاعات حساب، بدون هدایت مهمان به صفحه ورود
     useEffect(() => {
         if (isOpen) {
             const fetchUserData = async () => {
                 try {
+                    setAuthResolved(false);
+                    const hasSession = await restoreSession();
+                    setIsAuthenticated(hasSession);
+                    if (!hasSession) {
+                        reset({ fullName: "", phone: "", service: SERVICES[0], date: "", time: "", captchaAnswer: "" });
+                        await loadCaptcha();
+                        return;
+                    }
                     const res = await api.get("/users/me/");
                     const user = res.data;
 
@@ -81,15 +128,20 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                         phone: rawPhone,
                         service: SERVICES[0],
                         date: "",
-                        time: ""
+                        time: "",
+                        captchaAnswer: "",
                     });
                 } catch (err) {
                     console.error("Failed to fetch user data", err);
+                    setIsAuthenticated(false);
+                    await loadCaptcha();
+                } finally {
+                    setAuthResolved(true);
                 }
             };
-            fetchUserData();
+            void fetchUserData();
         }
-    }, [isOpen, reset]);
+    }, [isOpen, loadCaptcha, reset]);
 
     // دریافت اسلات‌های ماه جاری
     useEffect(() => {
@@ -101,12 +153,12 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                 const start = gFormat(startOfMonth(currentMonth), 'yyyy-MM-dd');
                 const end = gFormat(endOfMonth(currentMonth), 'yyyy-MM-dd');
 
-                let allSlots: any[] = [];
+                let allSlots: AppointmentSlot[] = [];
                 let url: string | null = `/appointments/slots/?start_date=${start}&end_date=${end}&_t=${Date.now()}`;
 
                 while (url) {
-                    const res: any = await api.get(url);
-                    const data = res.data;
+                    const res: AxiosResponse<AppointmentSlot[] | PaginatedSlots> = await api.get<AppointmentSlot[] | PaginatedSlots>(url);
+                    const data: AppointmentSlot[] | PaginatedSlots = res.data;
 
                     if (Array.isArray(data)) {
                         allSlots = allSlots.concat(data);
@@ -115,7 +167,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                         allSlots = allSlots.concat(data.results);
                         if (data.next) {
                             try {
-                                const nextUrl = new URL(data.next);
+                                const nextUrl: URL = new URL(data.next);
                                 url = (nextUrl.pathname + nextUrl.search).replace('/api/v1', '');
                             } catch {
                                 url = null;
@@ -136,7 +188,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
     }, [currentMonth, isOpen]);
 
     const slotsByDate = useMemo(() => {
-        const map: Record<string, any[]> = {};
+        const map: Record<string, AppointmentSlot[]> = {};
         availableSlots.forEach(slot => {
             const dateKey = slot.date || slot.start_at.slice(0, 10);
             if (!map[dateKey]) map[dateKey] = [];
@@ -156,27 +208,46 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
             toast.error("لطفا یک ساعت معتبر را انتخاب کنید.");
             return;
         }
+        if (!isAuthenticated && (!captcha || !data.captchaAnswer?.trim())) {
+            toast.error("لطفا کد تصویر امنیتی را وارد کنید.");
+            return;
+        }
 
         setIsSubmitting(true);
         try {
             idempotencyKeyRef.current ??= crypto.randomUUID();
+            const [firstName, ...lastNameParts] = data.fullName.trim().split(/\s+/);
             await api.post(
                 '/appointments/',
-                { slot_id: selectedSlotId, reason: data.service },
+                {
+                    slot_id: selectedSlotId,
+                    reason: data.service,
+                    ...(!isAuthenticated && captcha ? {
+                        phone_number: data.phone.startsWith("0") ? `+98${data.phone.slice(1)}` : data.phone,
+                        first_name: firstName,
+                        last_name: lastNameParts.join(" "),
+                        captcha_challenge_id: captcha.challenge_id,
+                        captcha_answer: data.captchaAnswer,
+                    } : {}),
+                },
                 { headers: { 'Idempotency-Key': idempotencyKeyRef.current } },
             );
 
             toast.success("نوبت شما با موفقیت ثبت شد! منتظر تایید ادمین باشید.");
 
-            reset({ fullName: data.fullName, phone: data.phone, service: SERVICES[0], date: "", time: "" });
+            reset({ fullName: data.fullName, phone: data.phone, service: SERVICES[0], date: "", time: "", captchaAnswer: "" });
             setSelectedDateObj(null);
             setSelectedSlotId(null);
             idempotencyKeyRef.current = null;
             onSuccess();
             onClose();
-        } catch (err: any) {
-            const errMsg = err.response?.data?.detail || "خطا در ثبت نوبت. لطفا دوباره تلاش کنید.";
+        } catch (err: unknown) {
+            const responseData = axios.isAxiosError(err)
+                ? err.response?.data as { detail?: string; captcha_answer?: string }
+                : undefined;
+            const errMsg = responseData?.detail || responseData?.captcha_answer || "خطا در ثبت نوبت. لطفا دوباره تلاش کنید.";
             toast.error(errMsg);
+            if (!isAuthenticated) await loadCaptcha();
         } finally {
             setIsSubmitting(false);
         }
@@ -225,7 +296,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                 </DialogHeader>
 
                 {/* استفاده از div ساده به جای ScrollArea */}
-                <div className="w-full p-6 md:p-8">
+                <div className="w-full p-6 md:p-8" aria-busy={!authResolved}>
                     {/* استفاده از grid به جای flex برای تخصیص دقیق فضا */}
                     <div className="w-full grid grid-cols-1 lg:grid-cols-5 gap-10 lg:gap-16 items-start" dir="rtl">
 
@@ -364,9 +435,31 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                                     {!errors.date && errors.time && <p className="text-xs text-red-500 font-medium flex items-center gap-1.5"><AlertCircle size={14} /> {errors.time.message}</p>}
                                 </div>
 
+                                {!isAuthenticated && authResolved && (
+                                    <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                        <label htmlFor="booking-captcha" className="text-sm font-bold text-slate-700">کد تصویر امنیتی:</label>
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                                            <div className="flex h-[90px] min-w-[260px] items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+                                                {isLoadingCaptcha ? (
+                                                    <Loader2 className="size-5 animate-spin text-slate-400" aria-label="در حال دریافت تصویر امنیتی" />
+                                                ) : captcha ? (
+                                                    <img src={captcha.image_data_url} alt="تصویر کد امنیتی؛ پنج نویسه را در کادر وارد کنید" width={260} height={90} />
+                                                ) : (
+                                                    <span className="text-xs text-red-500">تصویر در دسترس نیست</span>
+                                                )}
+                                            </div>
+                                            <button type="button" onClick={() => void loadCaptcha()} disabled={isLoadingCaptcha} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 hover:border-[#2993A3] disabled:opacity-50" aria-label="دریافت تصویر امنیتی جدید">
+                                                <RefreshCw className="size-4" /> تصویر جدید
+                                            </button>
+                                        </div>
+                                        <input id="booking-captcha" {...register("captchaAnswer")} autoComplete="off" inputMode="text" maxLength={5} dir="ltr" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left uppercase tracking-[0.35em] outline-none focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3]" />
+                                        <p className="text-xs text-slate-500">این تصویر در سرور همین سامانه تولید می‌شود و به سرویس دیگری ارسال نمی‌شود.</p>
+                                    </div>
+                                )}
+
                                 <button
                                     type="submit"
-                                    disabled={isSubmitting}
+                                    disabled={isSubmitting || !authResolved || (!isAuthenticated && !captcha)}
                                     className="w-full lg:w-auto min-w-[200px] rounded-full bg-gradient-to-r from-[#2993A3] to-[#75C1C7] px-8 py-4 text-base font-bold text-white shadow-[0_4px_14px_0_rgba(41,147,163,0.39)] transition-all hover:shadow-[0_6px_20px_rgba(41,147,163,0.23)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100 mt-2 float-left flex items-center justify-center gap-2"
                                 >
                                     {isSubmitting ? (
