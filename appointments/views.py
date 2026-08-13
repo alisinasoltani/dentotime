@@ -39,6 +39,7 @@ class SlotListView(generics.ListAPIView):
 class AdminSlotListCreateView(generics.ListCreateAPIView):
     """Admin view to list and create appointment slots."""
     serializer_class = AppointmentSlotSerializer
+    permission_classes = (IsAdminRole,)
 
     def get_queryset(self):
         qs = AppointmentSlot.objects.all()

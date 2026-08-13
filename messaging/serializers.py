@@ -70,6 +70,13 @@ class AdminThreadUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = MessageThread
         fields = ("status", "assigned_admin")
+
+    def validate_assigned_admin(self, value):
+        if value is not None and not (
+            value.is_active and value.is_admin_role
+        ):
+            raise serializers.ValidationError("assigned_admin must be an active administrator.")
+        return value
         
 class GuestMessageSerializer(serializers.Serializer):
     """Serializer for unauthenticated users sending a message from the footer."""

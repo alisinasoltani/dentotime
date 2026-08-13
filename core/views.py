@@ -5,11 +5,10 @@ from django.core.files.storage import default_storage
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import MultiPartParser, FormParser
 
-from accounts.permissions import IsAdminRole
+from accounts.permissions import IsActiveAuthenticated, IsAdminRole, IsDoctorOrAdmin
 from core.models import SystemSettings
 from .serializers import FileUploadSerializer, FileMetadataSerializer, SystemSettingsSerializer
 
@@ -35,7 +34,7 @@ ALLOWED_CONTENT_TYPES = {
 
 class FileUploadView(APIView):
     """Handle direct file uploads to the local server."""
-    permission_classes = (IsAuthenticated,)
+    permission_classes = (IsDoctorOrAdmin,)
     parser_classes = (MultiPartParser, FormParser) # Required for file uploads
 
     def post(self, request):
@@ -48,9 +47,14 @@ class FileUploadView(APIView):
         uploaded_file = data["file"]
         file_content_type = uploaded_file.content_type or "application/octet-stream"
 
-        # Security: Only doctors and admins can upload files (Normal users cannot)
-        if not (request.user.is_doctor_role or request.user.is_admin_role):
-            raise PermissionDenied("You are not allowed to upload files.")
+        if request.user.is_admin_role and purpose == "verification_document":
+            raise PermissionDenied("Administrators cannot upload doctor verification documents.")
+        if request.user.is_doctor_role:
+            doctor = getattr(request.user, "doctor_profile", None)
+            if doctor is None:
+                raise PermissionDenied("A doctor profile is required for this upload.")
+            if purpose == "chat_attachment" and not doctor.chat_enabled:
+                raise PermissionDenied("Only approved doctors can upload chat attachments.")
 
         # Security: Content-Type Allowlist
         if file_content_type not in ALLOWED_CONTENT_TYPES:
@@ -97,7 +101,7 @@ class SystemSettingsView(APIView):
     def get_permissions(self):
         if self.request.method == 'PATCH':
             return [IsAdminRole()]
-        return [IsAuthenticated()]
+        return [IsActiveAuthenticated()]
 
     def get(self, request):
         settings_obj = SystemSettings.load()

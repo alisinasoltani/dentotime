@@ -19,7 +19,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .models import User, NormalUser, Doctor, DoctorReview
 from accounts.models import User, OTPCode
 from django.db.models import Count
-from .permissions import IsAdminRole, IsDoctorRole
+from .permissions import IsAdminRole, IsDoctorRole, IsNormalUser
 from .serializers import (
     LoginSerializer, SignupSerializer, UserDetailSerializer,
     UserProfileSerializer, PasswordChangeSerializer,
@@ -168,7 +168,7 @@ class AdminUserListView(ListAPIView):
     
     def get_queryset(self):
         # Querying NormalUser automatically JOINs the User table via MTI.
-        return NormalUser.objects.all()
+        return NormalUser.objects.order_by("-date_joined", "pk")
 
 
 class AdminDoctorListView(ListAPIView):
@@ -184,7 +184,7 @@ class AdminDoctorListView(ListAPIView):
         status = self.request.query_params.get("verification_status")
         if status:
             qs = qs.filter(verification_status=status)
-        return qs
+        return qs.order_by("-date_joined", "pk")
 
 
 class AdminUserDeactivateView(APIView):
@@ -199,6 +199,8 @@ class AdminUserDeactivateView(APIView):
             return Response({"detail": "Cannot deactivate a superuser."}, status=status.HTTP_403_FORBIDDEN)
         if user == request.user:
             return Response({"detail": "Cannot deactivate yourself."}, status=status.HTTP_403_FORBIDDEN)
+        if user.is_admin_role:
+            return Response({"detail": "Administrator accounts cannot be managed here."}, status=status.HTTP_403_FORBIDDEN)
         
         user.is_active = False
         user.save(update_fields=["is_active"])
@@ -211,6 +213,8 @@ class AdminUserReactivateView(APIView):
 
     def patch(self, request, pk):
         user = get_object_or_404(User, pk=pk)
+        if user.is_admin_role:
+            return Response({"detail": "Administrator accounts cannot be managed here."}, status=status.HTTP_403_FORBIDDEN)
         user.is_active = True
         user.save(update_fields=["is_active"])
         return Response({"detail": "User reactivated successfully."}, status=status.HTTP_200_OK)
@@ -369,23 +373,31 @@ class PublicDoctorListView(generics.ListAPIView):
         ).annotate(
             likes_count=Count('likes'),
             reviews_count=Count('reviews')
-        )
+        ).order_by("pk")
 
 class PublicDoctorDetailView(generics.RetrieveAPIView):
     """جزئیات عمومی یک دکتر همراه با نظرات کاربران"""
     serializer_class = PublicDoctorDetailSerializer
     permission_classes = [AllowAny]
-    queryset = Doctor.objects.filter(verification_status=Doctor.VerificationStatus.APPROVED)
+    queryset = Doctor.objects.filter(
+        verification_status=Doctor.VerificationStatus.APPROVED,
+        is_active=True,
+    )
 
     def get_queryset(self):
         return super().get_queryset().annotate(likes_count=Count('likes'))
 
 class LikeDoctorView(APIView):
     """لایک یا آنلایک کردن یک دکتر (نیازمند لاگین)"""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsNormalUser]
 
     def post(self, request, pk):
-        doctor = get_object_or_404(Doctor, pk=pk, verification_status=Doctor.VerificationStatus.APPROVED)
+        doctor = get_object_or_404(
+            Doctor,
+            pk=pk,
+            is_active=True,
+            verification_status=Doctor.VerificationStatus.APPROVED,
+        )
         user = request.user
 
         if user in doctor.likes.all():
@@ -402,12 +414,23 @@ class ReviewListCreateView(generics.ListCreateAPIView):
     def get_permissions(self):
         # دیدن نظرات عمومی است، اما ثبت نظر نیازمند لاگین است
         if self.request.method == 'POST':
-            return [IsAuthenticated()]
+            return [IsNormalUser()]
         return [AllowAny()]
 
     def get_queryset(self):
-        return DoctorReview.objects.filter(doctor_id=self.kwargs['pk'])
+        doctor = get_object_or_404(
+            Doctor,
+            pk=self.kwargs['pk'],
+            is_active=True,
+            verification_status=Doctor.VerificationStatus.APPROVED,
+        )
+        return DoctorReview.objects.filter(doctor=doctor)
 
     def perform_create(self, serializer):
-        doctor = get_object_or_404(Doctor, pk=self.kwargs['pk'])
+        doctor = get_object_or_404(
+            Doctor,
+            pk=self.kwargs['pk'],
+            is_active=True,
+            verification_status=Doctor.VerificationStatus.APPROVED,
+        )
         serializer.save(user=self.request.user, doctor=doctor)

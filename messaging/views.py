@@ -11,7 +11,7 @@ from rest_framework.exceptions import PermissionDenied
 from accounts.permissions import IsAdminRole
 from accounts.models import User, NormalUser
 from messaging.models import MessageThread, Message, MessageAttachment
-from .permissions import IsParticipantOrAdmin
+from .permissions import CanCreateOwnThread, IsParticipantOrAdmin
 from .serializers import (
     ThreadListSerializer, MessageSerializer, MessageCreateSerializer, AdminThreadUpdateSerializer, GuestMessageSerializer
 )
@@ -49,7 +49,7 @@ class ThreadListView(generics.ListAPIView):
 
 class ThreadGetOrCreateView(APIView):
     """Get or create a thread for the current user/doctor."""
-    permission_classes = (IsParticipantOrAdmin,)
+    permission_classes = (CanCreateOwnThread,)
 
     def post(self, request):
         user = request.user
@@ -77,23 +77,24 @@ class MessageListCreateView(generics.ListCreateAPIView):
     pagination_class = MessageCursorPagination
     permission_classes = (IsParticipantOrAdmin,)
 
+    def get_thread(self):
+        queryset = MessageThread.objects.select_related("participant")
+        if not self.request.user.is_admin_role:
+            queryset = queryset.filter(participant_id=self.request.user.id)
+        return get_object_or_404(queryset, pk=self.kwargs["pk"])
+
     def get_serializer_class(self):
         if self.request.method == "POST":
             return MessageCreateSerializer
         return MessageSerializer
 
     def get_queryset(self):
-        thread = get_object_or_404(MessageThread, pk=self.kwargs["pk"])
-        if not (self.request.user.is_admin_role or thread.participant_id == self.request.user.id):
-            return Message.objects.none()
-        return Message.objects.filter(thread=thread).prefetch_related("attachments").order_by("created_at")
+        thread = self.get_thread()
+        return Message.objects.filter(thread=thread).select_related("sender").prefetch_related("attachments").order_by("created_at")
 
     @transaction.atomic
     def perform_create(self, serializer):
-        thread = get_object_or_404(MessageThread, pk=self.kwargs["pk"])
-        
-        if not (self.request.user.is_admin_role or thread.participant_id == self.request.user.id):
-            raise PermissionDenied("You do not have access to this thread.")
+        thread = self.get_thread()
         
         
         sender = self.request.user
@@ -129,7 +130,7 @@ class MessageListCreateView(generics.ListCreateAPIView):
         self.perform_create(serializer)
         
         # Re-fetch the message with attachments to serialize for the response
-        message = Message.objects.get(pk=serializer.instance.pk)
+        message = Message.objects.select_related("sender").prefetch_related("attachments").get(pk=serializer.instance.pk)
         response_serializer = MessageSerializer(message, context=self.get_serializer_context())
         
         headers = self.get_success_headers(response_serializer.data)
@@ -139,10 +140,10 @@ class ThreadMarkReadView(APIView):
     permission_classes = (IsParticipantOrAdmin,)
 
     def patch(self, request, pk):
-        thread = get_object_or_404(MessageThread, pk=pk)
-        
-        if not (request.user.is_admin_role or thread.participant_id == request.user.id):
-            return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
+        queryset = MessageThread.objects.all()
+        if not request.user.is_admin_role:
+            queryset = queryset.filter(participant_id=request.user.id)
+        thread = get_object_or_404(queryset, pk=pk)
             
         Message.objects.filter(thread=thread, read_by_recipient=False).exclude(sender=request.user).update(
             read_by_recipient=True, read_at=timezone.now()
