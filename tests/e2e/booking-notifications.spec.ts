@@ -1,5 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
+// These tests exercise the same date-driven booking flow; serial execution per
+// browser avoids timing races in the calendar/slot transition under a loaded CI host.
+test.describe.configure({ mode: 'serial' });
+
 const GUEST_MESSAGE = 'نوبت شما با موفقیت ثبت شد. برای مشاهده نوبت و پیگیری لطفا به حساب خود وارد شوید';
 const AUTHENTICATED_MESSAGE = 'نوبت شما با موفقیت ذخیره شد';
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';

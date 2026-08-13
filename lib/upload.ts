@@ -272,6 +272,40 @@ function resultFromSession(session: UploadSessionResponse): UploadFileResult {
   };
 }
 
+async function waitForSafetyScan(
+  session: UploadSessionResponse,
+  signal?: AbortSignal,
+  onProgress?: (percent: number) => void,
+): Promise<UploadSessionResponse> {
+  let current = session;
+  let delay = 750;
+  const deadline = Date.now() + 10 * 60 * 1000;
+  while (current.asset_state !== 'AVAILABLE') {
+    if (current.asset_state === 'FAILED' || ['INFECTED', 'FAILED'].includes(current.scan_status)) {
+      throw new Error(current.scan_error || 'فایل در بررسی امنیتی رد شد');
+    }
+    if (Date.now() >= deadline) {
+      throw new Error('بررسی امنیتی فایل هنوز تمام نشده است؛ چند دقیقه دیگر دوباره تلاش کنید');
+    }
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => {
+        window.clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      const timer = window.setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      }, delay);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+    const response = await api.get<UploadSessionResponse>(`/files/uploads/${session.upload_id}/`);
+    current = response.data;
+    onProgress?.(current.asset_state === 'AVAILABLE' ? 100 : 99);
+    delay = Math.min(Math.round(delay * 1.5), 5000);
+  }
+  return current;
+}
+
 export async function uploadFile(
   file: File | Blob,
   opts: {
@@ -330,6 +364,7 @@ export async function uploadFile(
       if (hashes.sha256 !== session.sha256) throw new Error('اثر انگشت فایل با نشست آپلود مطابقت ندارد');
     }
     if (session.state === 'COMPLETED') {
+      session = await waitForSafetyScan(session, signal, onProgress);
       await deleteUpload(fingerprint);
       onProgress?.(100);
       return resultFromSession(session);
@@ -385,9 +420,10 @@ export async function uploadFile(
     const completedResponse = await api.post<UploadSessionResponse>(
       `/files/uploads/${session.upload_id}/complete/`,
     );
+    const safeSession = await waitForSafetyScan(completedResponse.data, signal, onProgress);
     await deleteUpload(fingerprint);
     onProgress?.(100);
-    return resultFromSession(completedResponse.data);
+    return resultFromSession(safeSession);
   } catch (error) {
     if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
       throw new Error('آپلود فایل متوقف شد؛ با انتخاب دوباره همین فایل ادامه پیدا می‌کند');

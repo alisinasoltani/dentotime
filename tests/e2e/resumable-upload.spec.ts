@@ -21,9 +21,10 @@ interface UploadMockState {
   submittedAssetIds: string[] | null;
   workerSha256: string | null;
   verificationSubmitted: boolean;
+  scanPolls: number;
 }
 
-function sessionPayload(state: UploadMockState) {
+function sessionPayload(state: UploadMockState, scanAvailable = false) {
   return {
     upload_id: '11111111-1111-4111-8111-111111111111',
     client_upload_id: '22222222-2222-4222-8222-222222222222',
@@ -36,8 +37,8 @@ function sessionPayload(state: UploadMockState) {
     part_size: PART_SIZE,
     expected_part_count: 2,
     state: state.completedParts.size === 2 ? 'COMPLETED' : 'UPLOADING',
-    asset_state: state.completedParts.size === 2 ? 'QUARANTINED' : 'UPLOADING',
-    scan_status: 'PENDING',
+    asset_state: scanAvailable ? 'AVAILABLE' : state.completedParts.size === 2 ? 'QUARANTINED' : 'UPLOADING',
+    scan_status: scanAvailable ? 'CLEAN' : 'PENDING',
     expires_at: '2035-01-01T00:00:00Z',
     completed_parts: [...state.completedParts].sort().map((partNumber) => ({
       part_number: partNumber,
@@ -74,7 +75,8 @@ async function mockUploadFlow(page: Page, state: UploadMockState) {
     await json(route, sessionPayload(state), 201);
   });
   await page.route('**/api/v1/files/uploads/11111111-1111-4111-8111-111111111111/', async (route) => {
-    await json(route, sessionPayload(state));
+    if (state.completedParts.size === 2) state.scanPolls += 1;
+    await json(route, sessionPayload(state, state.scanPolls > 0));
   });
   await page.route('**/parts/presign/', async (route) => {
     const payload = route.request().postDataJSON() as { parts: Array<{ part_number: number }> };
@@ -166,6 +168,7 @@ test('failed multipart upload resumes after reload without retransmitting succes
     submittedAssetIds: null,
     workerSha256: null,
     verificationSubmitted: false,
+    scanPolls: 0,
   };
   await mockUploadFlow(page, state);
   await page.goto('/doctor/verification');
@@ -189,6 +192,7 @@ test('failed multipart upload resumes after reload without retransmitting succes
   expect(state.createCalls).toBe(1);
   expect(state.putCounts.get(1)).toBe(1);
   expect(state.putCounts.get(2)).toBeGreaterThan(1);
+  expect(state.scanPolls).toBeGreaterThan(0);
   expect(state.presignBatches[0]).toEqual([1, 2]);
   expect(state.presignBatches.slice(1).every((batch) => !batch.includes(1))).toBe(true);
   expect(state.submittedAssetIds).toEqual(['33333333-3333-4333-8333-333333333333']);

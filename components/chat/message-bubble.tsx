@@ -1,6 +1,7 @@
 import React from "react";
 import { ChatMessage } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { PrivateDownloadButton } from "@/components/private-download-button";
 
 const MessageBubble = React.memo(({ message, isSender }: { message: ChatMessage; isSender: boolean }) => {
   return (
@@ -18,10 +19,10 @@ const MessageBubble = React.memo(({ message, isSender }: { message: ChatMessage;
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-2 flex flex-col gap-2">
             {message.attachments.map((att, idx) => (
-              att.download_url ? (
-                <a key={att.asset_id || idx} href={att.download_url} target="_blank" rel="noreferrer" className="text-xs text-blue-500 underline">
+              att.state === "AVAILABLE" ? (
+                <PrivateDownloadButton key={att.asset_id || idx} assetId={att.asset_id} className="text-right text-xs text-blue-500 underline">
                   {att.file_name || "فایل پیوست"}
-                </a>
+                </PrivateDownloadButton>
               ) : (
                 <span key={att.asset_id || idx} className="text-xs text-gray-500">
                   {att.file_name || "فایل پیوست"} — در حال بررسی امنیتی

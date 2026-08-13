@@ -217,7 +217,8 @@ export interface UploadSessionResponse {
   expected_part_count: number;
   state: 'CREATED' | 'UPLOADING' | 'COMPLETING' | 'COMPLETED' | 'ABORTING' | 'ABORTED' | 'EXPIRED' | 'FAILED';
   asset_state: 'PENDING' | 'UPLOADING' | 'QUARANTINED' | 'AVAILABLE' | 'FAILED' | 'DELETED';
-  scan_status: 'PENDING' | 'CLEAN' | 'INFECTED' | 'FAILED';
+  scan_status: 'PENDING' | 'SCANNING' | 'CLEAN' | 'INFECTED' | 'FAILED';
+  scan_error?: string;
   expires_at: string;
   completed_parts: CompletedUploadPart[];
 }
