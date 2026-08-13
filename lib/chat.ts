@@ -1,6 +1,6 @@
 // lib/chat.ts
 import api from "./api";
-import type { ChatThread, ChatMessage, UploadFileResult } from "./types";
+import type { ChatThread, ChatMessage } from "./types";
 
 export const getThreads = async (search?: string): Promise<ChatThread[]> => {
   const res = await api.get("/chat/threads/", { params: { search } });
@@ -21,9 +21,9 @@ export const getMessages = async (
 export const sendMessageApi = async (
   threadId: string,
   body: string,
-  attachments: any[] = [],
+  assetIds: string[] = [],
 ) => {
-  const payload: any = {};
+  const payload: { body?: string; asset_ids?: string[] } = {};
 
   // فقط اگر متن داشت، کلید body را اضافه کن
   if (body && body.trim() !== "") {
@@ -31,8 +31,8 @@ export const sendMessageApi = async (
   }
 
   // اگر فایلی داشت، کلید attachments را اضافه کن
-  if (attachments && attachments.length > 0) {
-    payload.attachments = attachments;
+  if (assetIds.length > 0) {
+    payload.asset_ids = assetIds;
   }
 
   const res = await api.post(`/chat/threads/${threadId}/messages/`, payload);

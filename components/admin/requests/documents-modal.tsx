@@ -32,12 +32,12 @@ export default function DocumentsModal({ isOpen, onClose, documents, doctorName 
                     {doc.file_name || `مدارک ${idx + 1}`}
                   </span>
                 </div>
-                <a href={doc.file_url} target="_blank" rel="noopener noreferrer">
+                {doc.download_url ? <a href={doc.download_url} target="_blank" rel="noopener noreferrer">
                   <Button variant="ghost" size="sm" className="text-[#2993A3] hover:bg-[#E9F5F9]">
                     <Download className="h-4 w-4 ml-1" />
                     دانلود
                   </Button>
-                </a>
+                </a> : <span className="text-xs text-gray-500">در حال بررسی امنیتی</span>}
               </div>
             ))
           )}

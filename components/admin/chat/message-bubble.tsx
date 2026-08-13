@@ -18,9 +18,15 @@ const MessageBubble = React.memo(({ message, isSender }: { message: ChatMessage;
         {message.attachments && message.attachments.length > 0 && (
           <div className="mt-2 flex flex-col gap-2">
             {message.attachments.map((att, idx) => (
-              <a key={idx} href={att.file_url} target="_blank" className="text-xs text-blue-500 underline">
-                {att.file_name || "فایل پیوست"}
-              </a>
+              att.download_url ? (
+                <a key={att.asset_id || idx} href={att.download_url} target="_blank" rel="noreferrer" className="text-xs text-blue-500 underline">
+                  {att.file_name || "فایل پیوست"}
+                </a>
+              ) : (
+                <span key={att.asset_id || idx} className="text-xs text-gray-500">
+                  {att.file_name || "فایل پیوست"} — در حال بررسی امنیتی
+                </span>
+              )
             ))}
           </div>
         )}

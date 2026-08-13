@@ -13,9 +13,12 @@ export interface Doctor {
   verification_status: "PENDING" | "APPROVED" | "REJECTED";
   verification_date?: string;
   documents: Array<{
-    file_url: string;
+    asset_id: string;
     file_name: string;
     file_size: number;
+    state?: string;
+    scan_status?: string;
+    download_url?: string;
   }>;
 }
 

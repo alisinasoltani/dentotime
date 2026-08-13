@@ -95,10 +95,10 @@ export default function EditDoctorInfoPage() {
 
             // آپدیت پروفایل در دیتابیس
             await api.patch("/users/me/", {
-                profile_picture: result.file_url,
+                profile_picture_asset_id: result.asset_id,
             });
 
-            setProfilePicUrl(result.file_url);
+            setProfilePicUrl(URL.createObjectURL(croppedBlob));
 
             // Section 8.5: رفرش کردن داده‌های سایدبار
             await refetchUser();

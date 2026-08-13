@@ -40,9 +40,13 @@ export interface ChatMessage {
 }
 
 export interface DoctorDocument {
-  file_url: string;
+  asset_id: string;
   file_name: string;
   file_size: number;
+  file_content_type?: string;
+  state?: string;
+  scan_status?: string;
+  download_url?: string;
 }
 
 export interface DoctorRequest {
@@ -112,8 +116,7 @@ export type AccountOwner = 'DOCTOR' | 'ASSISTANT' | 'CLINIC';
 
 /** Shape of a single uploaded document as sent to the backend. */
 export interface VerificationDocument {
-  file_url: string;
-  file_key: string;
+  asset_id: string;
   file_name: string;
   file_size: number;
   file_content_type: string;
@@ -146,7 +149,7 @@ export interface VerificationSubmitPayload {
   medical_registration_number: string;
   supervising_doctor_name: string | null;
   clinic_name: string | null;
-  documents: VerificationDocument[];
+  asset_ids: string[];
 }
 
 // -----------------------------------------------------------------------------
@@ -154,11 +157,13 @@ export interface VerificationSubmitPayload {
 // -----------------------------------------------------------------------------
 
 export interface ChatAttachment {
-  file_url: string;
+  asset_id: string;
   file_name: string;
   file_size: number;
-  file_key: string;
   file_content_type?: string;
+  state?: string;
+  scan_status?: string;
+  download_url?: string;
 }
 
 /** Sender can be an expanded object OR a bare id — handle both defensively (Section 6.3). */
@@ -182,34 +187,49 @@ export type UploadPurpose = 'profile_picture' | 'verification_document' | 'chat_
 
 /** POST /files/presign/ request body (Section 7.1 step 2). */
 export interface PresignRequest {
+  client_upload_id: string;
   purpose: UploadPurpose;
   file_name: string;
   file_size: number;
   file_content_type: string;
+  sha256: string;
+  thread_id?: string;
 }
 
-/** POST /files/presign/ response (Section 7.1 step 2). */
-export interface PresignResponse {
-  presigned_url: string;
-  file_key: string;
+export interface CompletedUploadPart {
+  part_number: number;
+  size: number;
+  etag: string;
+  checksum_sha256: string;
 }
 
-/** POST /files/confirm/ response (Section 7.1 step 4). */
-export interface ConfirmUploadResponse {
-  file_url: string;
+/** Resumable upload-session response. */
+export interface UploadSessionResponse {
+  upload_id: string;
+  client_upload_id: string;
+  asset_id: string;
+  purpose: UploadPurpose;
   file_name: string;
   file_size: number;
-  file_key: string;
-  file_content_type?: string;
+  file_content_type: string;
+  sha256: string;
+  part_size: number;
+  expected_part_count: number;
+  state: 'CREATED' | 'UPLOADING' | 'COMPLETING' | 'COMPLETED' | 'ABORTING' | 'ABORTED' | 'EXPIRED' | 'FAILED';
+  asset_state: 'PENDING' | 'UPLOADING' | 'QUARANTINED' | 'AVAILABLE' | 'FAILED' | 'DELETED';
+  scan_status: 'PENDING' | 'CLEAN' | 'INFECTED' | 'FAILED';
+  expires_at: string;
+  completed_parts: CompletedUploadPart[];
 }
 
 /** Return type of the shared `uploadFile()` helper (Section 7.1). */
 export interface UploadFileResult {
-  file_url: string;
+  asset_id: string;
   file_name: string;
   file_size: number;
-  file_key: string;
   file_content_type: string;
+  state: UploadSessionResponse['asset_state'];
+  scan_status: UploadSessionResponse['scan_status'];
 }
 
 /** A file staged in the verification dropzone, awaiting submit-time upload (Section 7.3). */

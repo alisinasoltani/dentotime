@@ -107,6 +107,7 @@ export default function ChatWindow({ thread, onBack }: ChatWindowProps) {
             const result = await uploadFile(file, {
                 purpose: "chat_attachment",
                 fileName: file.name,
+                threadId: thread.id,
                 onProgress: (percent) => setUploadProgress(percent),
                 signal: controller.signal,
             });
@@ -119,16 +120,18 @@ export default function ChatWindow({ thread, onBack }: ChatWindowProps) {
                 sender: { id: user.id, first_name: user.first_name, last_name: user.last_name, role: "DOCTOR", profile_picture: user.profile_picture },
                 created_at: new Date().toISOString(),
                 attachments: [{
-                    file_url: result.file_url,
+                    asset_id: result.asset_id,
                     file_name: result.file_name,
                     file_size: result.file_size,
-                    file_key: result.file_key
+                    file_content_type: result.file_content_type,
+                    state: result.state,
+                    scan_status: result.scan_status,
                 }],
             };
 
             setMessages((prev) => [...prev, optimisticMessage]);
 
-            const realMessage = await sendMessageApi(thread.id, "", [result]);
+            const realMessage = await sendMessageApi(thread.id, "", [result.asset_id]);
             setMessages((prev) => prev.map((m) => (m.id === tempId ? realMessage : m)));
 
         } catch (err: any) {

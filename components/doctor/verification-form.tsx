@@ -94,13 +94,7 @@ export function VerificationForm() {
         medical_registration_number: sanitizeText(data.medicalRegistrationNumber),
         supervising_doctor_name: data.accountOwner === 'ASSISTANT' ? sanitizeText(data.supervisingDoctorName) : null,
         clinic_name: data.accountOwner === 'CLINIC' ? sanitizeText(data.clinicName) : null,
-        documents: uploadedDocs.map(doc => ({
-          file_url: doc.file_url,
-          file_key: doc.file_key,
-          file_name: doc.file_name,
-          file_size: doc.file_size,
-          file_content_type: doc.file_content_type,
-        })),
+        asset_ids: uploadedDocs.map((doc) => doc.asset_id),
       };
 
       // 4. Single POST request
