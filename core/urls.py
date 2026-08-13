@@ -3,6 +3,8 @@ from .views import (
     FileUploadView,
     FileAssetDownloadView,
     LegacyFileConfirmView,
+    HealthView,
+    ReadinessView,
     SystemSettingsView,
     UploadCompleteView,
     UploadPartPresignView,
@@ -12,6 +14,8 @@ from .views import (
 )
 
 urlpatterns = [
+    path("health/", HealthView.as_view(), name="health"),
+    path("ready/", ReadinessView.as_view(), name="readiness"),
     path("files/upload/", FileUploadView.as_view(), name="file_upload"),
     path("files/assets/<uuid:pk>/download/", FileAssetDownloadView.as_view(), name="file_asset_download"),
     path("files/presign/", UploadSessionCreateView.as_view(), name="file_presign_compat"),

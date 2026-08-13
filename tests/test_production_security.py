@@ -1,5 +1,7 @@
 import logging
+from unittest.mock import patch
 
+import pytest
 from django.conf import settings
 from django.test import Client
 
@@ -39,3 +41,23 @@ def test_security_headers_are_applied_to_api_responses():
 def test_profiling_is_disabled_by_default():
     assert settings.ENABLE_SILK is False
     assert "silk" not in settings.INSTALLED_APPS
+
+
+@pytest.mark.django_db
+def test_health_and_readiness_are_public_and_minimal():
+    client = Client()
+
+    assert client.get("/api/v1/health/").json() == {"status": "ok"}
+    with patch("core.views.cache.set"), patch("core.views.cache.get", return_value="ok"):
+        readiness = client.get("/api/v1/ready/")
+    assert readiness.status_code == 200
+    assert readiness.json() == {"status": "ready"}
+
+
+@pytest.mark.django_db
+def test_readiness_fails_closed_without_shared_cache():
+    with patch("core.views.cache.get", return_value=None):
+        response = Client().get("/api/v1/ready/")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable"}

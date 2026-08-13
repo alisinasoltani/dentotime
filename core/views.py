@@ -1,5 +1,8 @@
 from botocore.exceptions import BotoCoreError, ClientError
+from django.core.cache import cache
+from django.db import connection
 from django.shortcuts import get_object_or_404
+from rest_framework.permissions import AllowAny
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -26,6 +29,34 @@ from .uploads import (
     reconcile_uploaded_parts,
     record_uploaded_part,
 )
+
+
+class HealthView(APIView):
+    authentication_classes = ()
+    permission_classes = (AllowAny,)
+    throttle_classes = ()
+
+    def get(self, request):
+        return Response({"status": "ok"})
+
+
+class ReadinessView(APIView):
+    authentication_classes = ()
+    permission_classes = (AllowAny,)
+    throttle_classes = ()
+
+    def get(self, request):
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                cursor.fetchone()
+            cache_key = "readiness:probe"
+            cache.set(cache_key, "ok", timeout=10)
+            if cache.get(cache_key) != "ok":
+                raise RuntimeError("shared cache round trip failed")
+        except Exception:
+            return Response({"status": "unavailable"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return Response({"status": "ready"})
 
 class FileUploadView(APIView):
     """Compatibility endpoint that refuses unsafe single-request uploads."""

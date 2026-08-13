@@ -4,6 +4,7 @@ django-silk==5.5.0
 factory-boy==3.3.3
 Faker==40.23.0
 moto==5.2.2
+bandit==1.9.4
 pip-audit==2.9.0
 pytest==9.1.0
 pytest-django==4.12.0

@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Rotated historical database credential retained until a coordinated history rewrite."
+commits = ["45add337b333b38f5dcd17924a812167eb3c0f32"]
