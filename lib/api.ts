@@ -12,7 +12,7 @@ import { API_BASE_URL } from './config';
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
   headers: { 'Content-Type': 'application/json' },
-  timeout: 30_000,
+  timeout: 15_000,
   withCredentials: true,
 });
 

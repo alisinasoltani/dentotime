@@ -3,6 +3,9 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: true,
+  // Production builds are CPU-heavy on the supported CI runner; one browser
+  // worker keeps upload retry timers and date-driven booking tests deterministic.
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: 'line',
@@ -20,7 +23,7 @@ export default defineConfig({
     env: {
       ...process.env,
       NEXT_PUBLIC_API_URL: 'https://127.0.0.1:3100',
-      BACKEND_INTERNAL_URL: 'https://api.e2e.test',
+      BACKEND_INTERNAL_URL: 'https://127.0.0.1:3102',
     },
   },
   projects: [

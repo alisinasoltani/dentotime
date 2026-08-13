@@ -149,3 +149,9 @@ img {
 .admin-bg {
   background: linear-gradient(to top right, #F5FAFF 0%, #F5FAFF 46%, #EEF7FF 100%);
 }
+
+.doctor-list-item,
+.long-list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
+}

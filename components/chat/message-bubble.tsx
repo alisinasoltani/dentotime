@@ -5,7 +5,7 @@ import { PrivateDownloadButton } from "@/components/private-download-button";
 
 const MessageBubble = React.memo(({ message, isSender }: { message: ChatMessage; isSender: boolean }) => {
   return (
-    <div className={cn("flex w-full mb-4", isSender ? "justify-end" : "justify-start")}>
+    <div className={cn("long-list-item flex w-full mb-4", isSender ? "justify-end" : "justify-start")}>
       <div
         className={cn(
           "max-w-[70%] px-8 py-6 shadow-sm text-right",

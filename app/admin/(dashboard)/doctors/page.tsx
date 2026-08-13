@@ -1,16 +1,27 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { getAdminDoctorDetail, getDoctorsList, deactivateDoctorApi, Doctor } from "@/lib/doctors";
 import DoctorRow from "@/components/admin/doctors/doctor-row";
-import DeactivateDoctorModal from "@/components/admin/doctors/deactivate-doctor-modal";
-import DocumentsModal from "@/components/admin/requests/documents-modal"; // استفاده مجدد از مودال قبلی
-import { RatingsModal } from "@/components/admin/doctors/ratings-modal";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PaginationControls } from "@/components/admin/pagination-controls";
+
+const DeactivateDoctorModal = dynamic(
+  () => import("@/components/admin/doctors/deactivate-doctor-modal"),
+  { ssr: false },
+);
+const DocumentsModal = dynamic(
+  () => import("@/components/admin/requests/documents-modal"),
+  { ssr: false },
+);
+const RatingsModal = dynamic(
+  () => import("@/components/admin/doctors/ratings-modal").then((module) => module.RatingsModal),
+  { ssr: false },
+);
 
 export default function DoctorsListPage() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);

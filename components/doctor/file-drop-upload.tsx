@@ -1,7 +1,7 @@
 // components/doctor/file-drop-upload.tsx
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Controller } from 'react-hook-form';
 import { UploadCloud, X, FileText } from 'lucide-react';
 import { UPLOAD_CONSTRAINTS } from '@/lib/upload'; // <-- FIXED IMPORT
@@ -11,6 +11,15 @@ import type { StagedFile } from '@/lib/types';
 
 export function FileDropUpload({ control }: { control: any }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const previewUrls = useRef(new Set<string>());
+
+  useEffect(() => {
+    const urls = previewUrls.current;
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
+    };
+  }, []);
 
   const validateAndStage = (files: FileList, currentFiles: StagedFile[], append: (files: StagedFile[]) => void) => {
     const newFiles: StagedFile[] = [];
@@ -32,10 +41,12 @@ export function FileDropUpload({ control }: { control: any }) {
         return;
       }
 
+      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+      if (previewUrl) previewUrls.current.add(previewUrl);
       newFiles.push({
         id: `${file.name}-${file.size}-${Date.now()}`,
         file,
-        previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+        previewUrl,
         status: 'valid',
       });
     });
@@ -51,7 +62,14 @@ export function FileDropUpload({ control }: { control: any }) {
       defaultValue={[]}
       render={({ field, fieldState: { error } }) => {
         const append = (files: StagedFile[]) => field.onChange([...field.value, ...files]);
-        const remove = (id: string) => field.onChange(field.value.filter((f: StagedFile) => f.id !== id));
+        const remove = (id: string) => {
+          const removed = field.value.find((file: StagedFile) => file.id === id);
+          if (removed?.previewUrl) {
+            URL.revokeObjectURL(removed.previewUrl);
+            previewUrls.current.delete(removed.previewUrl);
+          }
+          field.onChange(field.value.filter((file: StagedFile) => file.id !== id));
+        };
 
         return (
           <div>

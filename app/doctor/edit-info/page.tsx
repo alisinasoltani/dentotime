@@ -2,7 +2,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import CropImageModal from "@/components/shared/crop-image-modal";
+import dynamic from "next/dynamic";
 import { uploadFile } from "@/lib/upload";
 import api from "@/lib/api";
 import { useDoctorContext } from "@/context/doctor-context";
@@ -12,6 +12,10 @@ import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { UploadCloud, Loader2, Lock, UserCog } from "lucide-react";
 import { sanitizeText } from "@/lib/sanitize";
+
+const CropImageModal = dynamic(() => import("@/components/shared/crop-image-modal"), {
+    ssr: false,
+});
 
 export default function EditDoctorInfoPage() {
     const { user, refetchUser } = useDoctorContext();
@@ -39,6 +43,13 @@ export default function EditDoctorInfoPage() {
     const [passwordSuccess, setPasswordSuccess] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const localProfileUrlRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        return () => {
+            if (localProfileUrlRef.current) URL.revokeObjectURL(localProfileUrlRef.current);
+        };
+    }, []);
 
     // همگام‌سازی اطلاعات کاربر از Context با State های محلی
     useEffect(() => {
@@ -98,7 +109,10 @@ export default function EditDoctorInfoPage() {
                 profile_picture_asset_id: result.asset_id,
             });
 
-            setProfilePicUrl(URL.createObjectURL(croppedBlob));
+            if (localProfileUrlRef.current) URL.revokeObjectURL(localProfileUrlRef.current);
+            const localProfileUrl = URL.createObjectURL(croppedBlob);
+            localProfileUrlRef.current = localProfileUrl;
+            setProfilePicUrl(localProfileUrl);
 
             // Section 8.5: رفرش کردن داده‌های سایدبار
             await refetchUser();

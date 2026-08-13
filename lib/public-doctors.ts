@@ -4,8 +4,9 @@ import type { PublicDoctor, DoctorDetail, PaginatedResponse, Review } from "./ty
 export const getPublicDoctorsPage = async (
   search?: string,
   page = 1,
+  signal?: AbortSignal,
 ): Promise<PaginatedResponse<PublicDoctor>> => {
-  const res = await api.get("/doctors/list/", { params: { search, page } });
+  const res = await api.get("/doctors/list/", { params: { search, page }, signal });
   if (Array.isArray(res.data)) {
     return { count: res.data.length, next: null, previous: null, results: res.data };
   }
@@ -21,8 +22,11 @@ export const getPublicDoctorPreview = async (): Promise<PublicDoctor[]> => {
   return res.data;
 };
 
-export const getPublicDoctorDetail = async (id: string | number): Promise<DoctorDetail> => {
-  const res = await api.get(`/doctors/${id}/`);
+export const getPublicDoctorDetail = async (
+  id: string | number,
+  signal?: AbortSignal,
+): Promise<DoctorDetail> => {
+  const res = await api.get(`/doctors/${id}/`, { signal });
   return res.data;
 };
 
@@ -34,8 +38,9 @@ export const toggleDoctorLike = async (id: string | number): Promise<{ is_liked:
 export const getDoctorReviews = async (
   id: string | number,
   page = 1,
+  signal?: AbortSignal,
 ): Promise<PaginatedResponse<Review>> => {
-  const res = await api.get(`/doctors/${id}/reviews/`, { params: { page } });
+  const res = await api.get(`/doctors/${id}/reviews/`, { params: { page }, signal });
   if (Array.isArray(res.data)) {
     return { count: res.data.length, next: null, previous: null, results: res.data };
   }

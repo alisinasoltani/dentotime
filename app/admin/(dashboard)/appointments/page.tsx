@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { getAppointments, getAppointmentsCalendar, rejectAppointmentApi } from "@/lib/appointments";
 import type { CalendarDaySummary } from "@/lib/appointments";
 import AppointmentRow from "@/components/admin/appointments/appointment-row";
-import RejectAppointmentModal from "@/components/admin/appointments/reject-appointment-modal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,6 +22,11 @@ import {
 } from "date-fns-jalali";
 import { cn } from "@/lib/utils";
 import { PaginationControls } from "@/components/admin/pagination-controls";
+
+const RejectAppointmentModal = dynamic(
+  () => import("@/components/admin/appointments/reject-appointment-modal"),
+  { ssr: false },
+);
 
 // روزهای هفته شمسی
 const WEEK_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'];

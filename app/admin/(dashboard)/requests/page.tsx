@@ -1,17 +1,23 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import dynamic from "next/dynamic";
 import { getDoctorRequestDetail, getDoctorRequests, approveDoctorApi, rejectDoctorApi } from "@/lib/requests";
 import { DoctorRequest, DoctorDocument } from "@/lib/types";
 import RequestRow from "@/components/admin/requests/request-row";
-import RejectModal from "@/components/admin/requests/reject-modal";
-import DocumentsModal from "@/components/admin/requests/documents-modal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PaginationControls } from "@/components/admin/pagination-controls";
+
+const RejectModal = dynamic(() => import("@/components/admin/requests/reject-modal"), {
+  ssr: false,
+});
+const DocumentsModal = dynamic(() => import("@/components/admin/requests/documents-modal"), {
+  ssr: false,
+});
 
 export default function RequestsPage() {
   const [requests, setRequests] = useState<DoctorRequest[]>([]);

@@ -32,9 +32,17 @@ export default function SupportChatList({
   }, []);
 
   useEffect(() => {
-    void refresh();
-    const interval = window.setInterval(() => void refresh(), 5000);
-    return () => window.clearInterval(interval);
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void refresh();
+    };
+    const initial = window.setTimeout(refreshWhenVisible, 0);
+    const interval = window.setInterval(refreshWhenVisible, 30_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [refresh]);
 
   const createConversation = async () => {
