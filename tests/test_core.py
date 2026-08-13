@@ -1,9 +1,5 @@
 import pytest
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Resumable multipart presign API is intentionally deferred to the upload phase.",
-)
 @pytest.mark.django_db
 def test_presign_rejects_invalid_file_type(doctor_client, mock_s3, settings):
     """
@@ -20,23 +16,21 @@ def test_presign_rejects_invalid_file_type(doctor_client, mock_s3, settings):
     
     settings.AWS_STORAGE_BUCKET_NAME = "test-bucket"
     payload = {
+        "client_upload_id": "bd147b92-abd5-4a7b-9603-36f72e244c38",
         "purpose": "chat_attachment",
         "file_name": "malware.exe",
         "file_size": 1024,
-        "file_content_type": "application/vnd.microsoft.portable-executable"
+        "file_content_type": "application/vnd.microsoft.portable-executable",
+        "sha256": "a" * 64,
     }
     res = doctor_client.post("/api/v1/files/presign/", payload, format="json")
     
     print(f"Response Status: {res.status_code} (Expected: 400)")
     assert res.status_code == 400
-    assert "Unsupported file type" in res.data["detail"]
+    assert "Unsupported file type" in str(res.data["detail"])
     print("Result: PASSED\n")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Resumable multipart confirmation API is intentionally deferred to the upload phase.",
-)
 @pytest.mark.django_db
 def test_confirm_upload_ownership_check(doctor_client, doctor_user, mock_s3, settings):
     """
@@ -56,7 +50,7 @@ def test_confirm_upload_ownership_check(doctor_client, doctor_user, mock_s3, set
     payload = {"file_key": "uploads/doctors/999/chat/file.pdf"}
     res = doctor_client.post("/api/v1/files/confirm/", payload, format="json")
     
-    print(f"Response Status: {res.status_code} (Expected: 403)")
-    assert res.status_code == 403
-    assert "does not belong to you" in res.data["detail"]
+    print(f"Response Status: {res.status_code} (Expected: 400)")
+    assert res.status_code == 400
+    assert "Storage keys cannot be confirmed" in res.data["detail"]
     print("Result: PASSED\n")

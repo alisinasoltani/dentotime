@@ -1,30 +1,27 @@
+from botocore.exceptions import BotoCoreError, ClientError
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from accounts.permissions import IsActiveAuthenticated, IsAdminRole, IsDoctorOrAdmin
-from core.models import SystemSettings
-from .serializers import SystemSettingsSerializer
-
-# Allowed MIME types for medical files, documents, and media
-ALLOWED_CONTENT_TYPES = {
-    # Images
-    "image/jpeg", "image/png", "image/gif", "image/webp", "image/bmp",
-    # Documents
-    "application/pdf", "application/msword", 
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document", # .docx
-    "application/vnd.ms-excel", 
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", # .xlsx
-    "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation", # .pptx
-    "text/plain", "text/csv",
-    # 3D & Medical
-    "application/dicom", "application/octet-stream", "model/stl", "model/obj",
-    # Audio & Video
-    "video/mp4", "video/x-msvideo", "audio/mpeg", "audio/wav", "audio/ogg",
-    # Archives
-    "application/zip", "application/x-zip-compressed", "application/x-rar-compressed",
-}
+from core.models import FileAsset, SystemSettings, UploadSession
+from messaging.models import MessageThread
+from .serializers import (
+    SystemSettingsSerializer,
+    UploadPartBatchSerializer,
+    UploadedPartSerializer,
+    UploadSessionCreateSerializer,
+)
+from .uploads import (
+    UploadError,
+    cancel_upload,
+    complete_upload,
+    create_upload_session,
+    presign_parts,
+    reconcile_uploaded_parts,
+    record_uploaded_part,
+)
 
 class FileUploadView(APIView):
     """Compatibility endpoint that refuses unsafe single-request uploads."""
@@ -39,6 +36,185 @@ class FileUploadView(APIView):
                 )
             },
             status=status.HTTP_410_GONE,
+        )
+
+
+def _owned_session(request, pk):
+    return get_object_or_404(
+        UploadSession.objects.select_related("asset"),
+        pk=pk,
+        owner=request.user,
+    )
+
+
+def _session_payload(session, completed_parts=()):
+    asset = session.asset
+    return {
+        "upload_id": str(session.pk),
+        "client_upload_id": str(session.client_upload_id),
+        "asset_id": str(asset.pk),
+        "purpose": asset.purpose.lower(),
+        "file_name": asset.original_name,
+        "file_size": asset.expected_size,
+        "file_content_type": asset.claimed_mime,
+        "sha256": asset.sha256,
+        "part_size": session.part_size,
+        "expected_part_count": session.expected_part_count,
+        "state": session.state,
+        "asset_state": asset.state,
+        "scan_status": asset.scan_status,
+        "expires_at": session.expires_at,
+        "completed_parts": [
+            {
+                "part_number": part.part_number,
+                "size": part.size,
+                "etag": part.etag,
+                "checksum_sha256": part.checksum_sha256,
+            }
+            for part in completed_parts
+        ],
+    }
+
+
+def _upload_scope(request, data):
+    purpose = data["purpose"]
+    thread = None
+    doctor = None
+    if purpose == FileAsset.Purpose.CHAT_ATTACHMENT:
+        thread_id = data.get("thread_id")
+        if not thread_id:
+            raise UploadError("thread_id is required for chat attachments.")
+        queryset = MessageThread.objects.all()
+        if not request.user.is_admin_role:
+            queryset = queryset.filter(participant=request.user)
+        thread = get_object_or_404(queryset, pk=thread_id)
+        if request.user.is_doctor_role and not request.user.doctor_profile.chat_enabled:
+            raise UploadError("Only approved doctors can upload chat attachments.")
+        if thread.thread_type != MessageThread.ThreadType.DOCTOR_ADMIN:
+            raise UploadError("Attachments are only allowed in doctor-administrator threads.")
+    elif purpose == FileAsset.Purpose.VERIFICATION_DOCUMENT:
+        if not request.user.is_doctor_role:
+            raise UploadError("Only doctors can upload verification documents.")
+        doctor = request.user.doctor_profile
+    elif data.get("thread_id"):
+        raise UploadError("thread_id is only valid for chat attachments.")
+    return thread, doctor
+
+
+class UploadSessionCreateView(APIView):
+    permission_classes = (IsDoctorOrAdmin,)
+
+    def post(self, request):
+        serializer = UploadSessionCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            thread, doctor = _upload_scope(request, data)
+            session, created = create_upload_session(
+                owner=request.user,
+                client_upload_id=data["client_upload_id"],
+                purpose=data["purpose"],
+                file_name=data["file_name"],
+                file_size=data["file_size"],
+                claimed_mime=data["file_content_type"],
+                sha256=data["sha256"],
+                thread=thread,
+                doctor=doctor,
+            )
+            completed = reconcile_uploaded_parts(session)
+        except UploadError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except (BotoCoreError, ClientError):
+            return Response(
+                {"detail": "Object storage is temporarily unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response(
+            _session_payload(session, completed),
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class UploadSessionDetailView(APIView):
+    permission_classes = (IsDoctorOrAdmin,)
+
+    def get(self, request, pk):
+        session = _owned_session(request, pk)
+        try:
+            completed = reconcile_uploaded_parts(session)
+        except (BotoCoreError, ClientError):
+            return Response(
+                {"detail": "Object storage is temporarily unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        session.refresh_from_db()
+        return Response(_session_payload(session, completed))
+
+    def delete(self, request, pk):
+        session = _owned_session(request, pk)
+        try:
+            cancel_upload(session)
+        except UploadError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class UploadPartPresignView(APIView):
+    permission_classes = (IsDoctorOrAdmin,)
+
+    def post(self, request, pk):
+        session = _owned_session(request, pk)
+        serializer = UploadPartBatchSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            parts = presign_parts(session, serializer.validated_data["parts"])
+        except UploadError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"parts": parts})
+
+
+class UploadPartRecordView(APIView):
+    permission_classes = (IsDoctorOrAdmin,)
+
+    def post(self, request, pk):
+        session = _owned_session(request, pk)
+        serializer = UploadedPartSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            part = record_uploaded_part(session, **serializer.validated_data)
+        except UploadError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "part_number": part.part_number,
+                "size": part.size,
+                "etag": part.etag,
+                "checksum_sha256": part.checksum_sha256,
+            }
+        )
+
+
+class UploadCompleteView(APIView):
+    permission_classes = (IsDoctorOrAdmin,)
+
+    def post(self, request, pk):
+        session = _owned_session(request, pk)
+        try:
+            asset = complete_upload(session)
+        except UploadError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+        session.refresh_from_db()
+        session.asset = asset
+        return Response(_session_payload(session, session.recorded_parts.exclude(etag="")))
+
+
+class LegacyFileConfirmView(APIView):
+    permission_classes = (IsDoctorOrAdmin,)
+
+    def post(self, request):
+        return Response(
+            {"detail": "Storage keys cannot be confirmed. Use an owned upload session."},
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
 

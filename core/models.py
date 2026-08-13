@@ -167,10 +167,12 @@ class UploadSession(models.Model):
         COMPLETING = "COMPLETING", "Completing"
         COMPLETED = "COMPLETED", "Completed"
         ABORTED = "ABORTED", "Aborted"
+        ABORTING = "ABORTING", "Aborting"
         EXPIRED = "EXPIRED", "Expired"
         FAILED = "FAILED", "Failed"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    client_upload_id = models.UUIDField(default=uuid.uuid4)
     asset = models.OneToOneField(
         FileAsset,
         on_delete=models.CASCADE,
@@ -204,6 +206,10 @@ class UploadSession(models.Model):
             ),
         ]
         constraints = [
+            models.UniqueConstraint(
+                fields=("owner", "client_upload_id"),
+                name="unique_owner_client_upload",
+            ),
             models.CheckConstraint(
                 condition=Q(
                     state__in=(
@@ -212,6 +218,7 @@ class UploadSession(models.Model):
                         "COMPLETING",
                         "COMPLETED",
                         "ABORTED",
+                        "ABORTING",
                         "EXPIRED",
                         "FAILED",
                     )
@@ -228,6 +235,40 @@ class UploadSession(models.Model):
     def clean(self):
         if self.owner_id and self.asset_id and self.owner_id != self.asset.owner_id:
             raise ValidationError({"owner": "Upload-session owner must match the asset owner."})
+
+
+class UploadPart(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    session = models.ForeignKey(
+        UploadSession,
+        on_delete=models.CASCADE,
+        related_name="recorded_parts",
+    )
+    part_number = models.PositiveIntegerField()
+    size = models.PositiveIntegerField()
+    etag = models.CharField(max_length=255)
+    checksum_sha256 = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"\A[0-9a-f]{64}\Z", "Enter a lowercase SHA-256 digest.")],
+    )
+    recorded_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("part_number",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("session", "part_number"),
+                name="unique_upload_session_part",
+            ),
+            models.CheckConstraint(
+                condition=Q(part_number__gte=1) & Q(part_number__lte=10_000),
+                name="upload_part_number_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(size__gte=1),
+                name="upload_part_size_valid",
+            ),
+        ]
 
 class SystemSettings(models.Model):
     cancellation_enabled = models.BooleanField(default=True)
