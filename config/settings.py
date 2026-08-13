@@ -7,16 +7,12 @@ from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
 
-load_dotenv()
-
 # This points to the backend/ folder
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Explicitly tell dotenv to load from the project root (or parent directory)
-# If your .env is inside backend/, use: BASE_DIR / '.env'
-# If your .env is one folder ABOVE backend/, use: BASE_DIR.parent / '.env'
-env_path = BASE_DIR / '.env'  # <--- Change this if it's actually inside backend/
-load_dotenv(env_path)
+# Local development may use an ignored .env file. Deployed environments should
+# inject these values through their secret manager instead.
+load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.environ["SECRET_KEY"]  # Raises error if missing
 DEBUG = os.getenv("DEBUG", "False") == "True"  # Defaults to False
@@ -89,8 +85,8 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": os.getenv("DB_NAME"),
-        "USER": "postgres",
-        "PASSWORD": "hA4obNvRwY6EiUaG6int",
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASS"),
         "HOST": os.getenv("DB_HOST"),
         "PORT": os.getenv("DB_PORT"),
         
@@ -176,6 +172,10 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,  # <--- CHANGE TO TRUE
     "AUTH_HEADER_TYPES": ("Bearer",),
+    # Keep JWT rotation independent from Django's SECRET_KEY. Rotating this
+    # value invalidates every access and refresh token immediately.
+    "SIGNING_KEY": os.getenv("JWT_SIGNING_KEY", SECRET_KEY),
+    "ISSUER": os.getenv("JWT_ISSUER", "dentotime-api"),
 }
 
 AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
