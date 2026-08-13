@@ -205,7 +205,8 @@ CORS_ALLOW_HEADERS = [
     "origin",
     "user-agent",
         "x-csrftoken",
-        "x-device-id",
+    "x-device-id",
+    "idempotency-key",
     "x-requested-with",
 ]
 CORS_ALLOW_METHODS = ["DELETE", "GET", "OPTIONS", "PATCH", "POST", "PUT"]

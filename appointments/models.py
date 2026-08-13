@@ -18,6 +18,16 @@ class AppointmentSlot(models.Model):
     class Meta:
         ordering = ["start_at"]
         indexes = [models.Index(fields=["date", "status"])]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(start_at__lt=models.F("end_at")),
+                name="appointment_slot_start_before_end",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=["AVAILABLE", "BOOKED", "BLOCKED"]),
+                name="appointment_slot_valid_status",
+            ),
+        ]
 
     def __str__(self):
         return f"Slot {self.date} @ {self.start_at:%H:%M} [{self.status}]"
@@ -35,7 +45,8 @@ class Appointment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     patient = models.ForeignKey("accounts.NormalUser", on_delete=models.CASCADE, related_name="appointments")
-    slot = models.OneToOneField(AppointmentSlot, on_delete=models.PROTECT, related_name="appointment")
+    slot = models.ForeignKey(AppointmentSlot, on_delete=models.PROTECT, related_name="appointments")
+    idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
     reason = models.TextField(blank=True, default="")
     admin_notes = models.TextField(blank=True, default="")
@@ -54,7 +65,28 @@ class Appointment(models.Model):
 
     class Meta:
         ordering = ["-slot__start_at"]
-        indexes = [models.Index(fields=["status"])]
+        indexes = [
+            models.Index(fields=["status"]),
+            models.Index(
+                fields=["patient", "status", "-created_at"],
+                name="appt_patient_status_created",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["slot"],
+                condition=models.Q(status__in=["PENDING", "APPROVED"]),
+                name="one_active_appointment_per_slot",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    status__in=[
+                        "PENDING", "APPROVED", "REJECTED", "CANCELLED", "COMPLETED", "NO_SHOW"
+                    ]
+                ),
+                name="appointment_valid_status",
+            ),
+        ]
 
     @property
     def start_at(self):

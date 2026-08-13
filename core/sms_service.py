@@ -69,6 +69,18 @@ def queue_otp_sms(mobile, code):
     )
 
 
+def queue_admin_alert(mobile, type_name):
+    return _sms_executor.submit(send_admin_alert, mobile, type_name)
+
+
+def queue_appt_approved(mobile, date, time):
+    return _sms_executor.submit(send_appt_approved, mobile, date, time)
+
+
+def queue_appt_rejected(mobile, date):
+    return _sms_executor.submit(send_appt_rejected, mobile, date)
+
+
 def send_otp(mobile, code):
     return send_sms(mobile, 288919, [{"name": "Code", "value": code}])
 

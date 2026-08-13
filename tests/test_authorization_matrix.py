@@ -112,9 +112,9 @@ def isolate_authorization_side_effects(monkeypatch, settings):
     settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
     cache.clear()
     for target in (
-        "appointments.views.send_appt_approved",
-        "appointments.views.send_appt_rejected",
-        "appointments.views.send_admin_alert",
+        "appointments.services.queue_appt_approved",
+        "appointments.services.queue_appt_rejected",
+        "appointments.services.queue_admin_alert",
         "accounts.views.send_doctor_approved",
         "accounts.views.send_doctor_rejected",
         "messaging.views.send_new_message",

@@ -8,12 +8,20 @@ class AppointmentSlotSerializer(serializers.ModelSerializer):
         model = AppointmentSlot
         fields = ("id", "date", "start_at", "end_at", "status")
 
+    def validate_status(self, value):
+        instance = self.instance
+        if value == AppointmentSlot.Status.BOOKED and (
+            instance is None or instance.status != AppointmentSlot.Status.BOOKED
+        ):
+            raise serializers.ValidationError("BOOKED is managed by the booking service.")
+        if instance and instance.appointments.filter(
+            status__in=[Appointment.Status.PENDING, Appointment.Status.APPROVED]
+        ).exists() and value != AppointmentSlot.Status.BOOKED:
+            raise serializers.ValidationError("A slot with an active booking must remain BOOKED.")
+        return value
+
 class AppointmentCreateSerializer(serializers.ModelSerializer):
-    slot_id = serializers.PrimaryKeyRelatedField(
-        queryset=AppointmentSlot.objects.all(), # Let the view handle the availability check
-        write_only=True,
-        source="slot"
-    )
+    slot_id = serializers.IntegerField(write_only=True)
     class Meta:
         model = Appointment
         fields = ("id", "slot_id", "reason")
@@ -59,19 +67,8 @@ class AdminAppointmentUpdateSerializer(serializers.ModelSerializer):
     
 class GuestAppointmentCreateSerializer(serializers.Serializer):
     """Serializer for unauthenticated users to book an appointment."""
-    slot_id = serializers.PrimaryKeyRelatedField(
-        queryset=AppointmentSlot.objects.all(),
-        write_only=True,
-        source="slot"
-    )
+    slot_id = serializers.IntegerField(write_only=True)
     phone_number = serializers.CharField(validators=[validate_e164_phone], write_only=True,)
     first_name = serializers.CharField(max_length=150, write_only=True,)
     last_name = serializers.CharField(max_length=150, write_only=True,)
     reason = serializers.CharField(required=False, allow_blank=True)
-
-    def validate(self, attrs):
-        # بررسی اینکه آیا اسلات قبلاً رزرو شده است یا خیر
-        slot = attrs.get("slot")
-        if slot.status != AppointmentSlot.Status.AVAILABLE:
-            raise serializers.ValidationError({"slot_id": "این زمان در همین لحظه توسط شخص دیگری رزرو شد."})
-        return attrs

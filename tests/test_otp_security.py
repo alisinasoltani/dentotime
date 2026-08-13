@@ -6,7 +6,7 @@ from time import perf_counter
 import pytest
 import requests
 from django.core.cache import cache
-from django.db import close_old_connections, connection
+from django.db import close_old_connections, connection, connections
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -146,7 +146,7 @@ def test_two_concurrent_otp_submissions_have_exactly_one_success(settings):
         try:
             return verify_code(APIClient(), challenge.pk, "47291").status_code
         finally:
-            close_old_connections()
+            connections.close_all()
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         statuses = list(pool.map(lambda _: submit(), range(2)))

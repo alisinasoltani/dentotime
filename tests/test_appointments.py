@@ -1,4 +1,5 @@
 import pytest
+import uuid
 from django.utils import timezone
 from datetime import timedelta
 from rest_framework.test import APIClient
@@ -64,7 +65,11 @@ def test_double_booking_race_condition(authed_client, normal_user):
         status=AppointmentSlot.Status.AVAILABLE
     )
     
-    res1 = authed_client.post("/api/v1/appointments/", {"slot_id": slot.id, "reason": "Race 1"})
+    res1 = authed_client.post(
+        "/api/v1/appointments/",
+        {"slot_id": slot.id, "reason": "Race 1"},
+        HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
+    )
     print(f"User 1 booking attempt: {res1.status_code} (Expected: 201)")
     assert res1.status_code == 201
     
@@ -72,9 +77,13 @@ def test_double_booking_race_condition(authed_client, normal_user):
     client2 = APIClient()
     client2.force_authenticate(user=user2)
     
-    res2 = client2.post("/api/v1/appointments/", {"slot_id": slot.id, "reason": "Race 2"})
-    print(f"User 2 booking attempt: {res2.status_code} (Expected: 400)")
+    res2 = client2.post(
+        "/api/v1/appointments/",
+        {"slot_id": slot.id, "reason": "Race 2"},
+        HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()),
+    )
+    print(f"User 2 booking attempt: {res2.status_code} (Expected: 409)")
     
-    assert res2.status_code == 400
-    assert "just booked" in str(res2.data["slot_id"])
+    assert res2.status_code == 409
+    assert "no longer available" in str(res2.data["slot_id"])
     print("Result: PASSED\n")

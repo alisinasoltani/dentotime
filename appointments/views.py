@@ -1,10 +1,6 @@
-from django.shortcuts import get_object_or_404
-from django.db import transaction
-from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.exceptions import ValidationError
 from rest_framework.filters import SearchFilter, OrderingFilter
 from collections import defaultdict
 from datetime import datetime
@@ -12,13 +8,21 @@ from rest_framework.permissions import AllowAny
 
 from accounts.models import NormalUser
 from accounts.permissions import IsNormalUser, IsAdminRole
-from accounts.models import User
 from .models import AppointmentSlot, Appointment
 from .serializers import (
     AppointmentSlotSerializer, AppointmentCreateSerializer, AppointmentListSerializer,
     AppointmentCancelSerializer, AdminAppointmentUpdateSerializer, GuestAppointmentCreateSerializer
 )
-from core.sms_service import send_appt_approved, send_appt_rejected, send_admin_alert
+from .services import (
+    CancellationNotAllowed,
+    IdempotencyConflict,
+    InvalidTransition,
+    SlotUnavailable,
+    book_appointment,
+    cancel_patient_appointment,
+    parse_idempotency_key,
+    transition_appointment,
+)
 
 class SlotListView(generics.ListAPIView):
     serializer_class = AppointmentSlotSerializer
@@ -52,60 +56,60 @@ class AdminSlotListCreateView(generics.ListCreateAPIView):
         return qs.order_by("start_at")
 
 
-class AppointmentCreateView(generics.CreateAPIView):
-    serializer_class = AppointmentCreateSerializer
+class AppointmentCreateView(APIView):
     permission_classes = (IsNormalUser,)
 
-    @transaction.atomic
-    def perform_create(self, serializer):
-        # The serializer already fetched the slot via slot_id, 
-        # so we just need to lock it by its primary key.
-        slot = serializer.validated_data["slot"]
-        locked_slot = AppointmentSlot.objects.select_for_update().get(pk=slot.pk)
-        
-        if locked_slot.status != AppointmentSlot.Status.AVAILABLE:
-            raise ValidationError({"slot_id": "This slot was just booked. Please select another."})
-            
-        # Save the appointment
-        serializer.save(patient=self.request.user.normaluser, status=Appointment.Status.PENDING)
-        
-        # Update the locked slot
-        locked_slot.status = AppointmentSlot.Status.BOOKED
-        locked_slot.save(update_fields=["status"])
+    def post(self, request):
+        serializer = AppointmentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            key = parse_idempotency_key(request.headers.get("Idempotency-Key"))
+            result = book_appointment(
+                patient=request.user.normaluser,
+                slot_id=serializer.validated_data["slot_id"],
+                reason=serializer.validated_data.get("reason", ""),
+                idempotency_key=key,
+            )
+        except AppointmentSlot.DoesNotExist:
+            return Response({"slot_id": "Slot not found."}, status=status.HTTP_404_NOT_FOUND)
+        except SlotUnavailable as exc:
+            return Response({"slot_id": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except IdempotencyConflict as exc:
+            return Response({"idempotency_key": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(
+            AppointmentListSerializer(result.appointment, context={"request": request}).data,
+            status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
+        )
 
 class MyAppointmentListView(generics.ListAPIView):
     serializer_class = AppointmentListSerializer
     permission_classes = (IsNormalUser,)
 
     def get_queryset(self):
-        return Appointment.objects.filter(patient=self.request.user.normaluser).order_by("-slot__start_at")
+        return Appointment.objects.filter(
+            patient=self.request.user.normaluser
+        ).select_related("patient", "slot").order_by("-slot__start_at")
 
 
 class AppointmentCancelView(APIView):
     permission_classes = (IsNormalUser,)
 
     def post(self, request, pk):
-        appointment = get_object_or_404(Appointment, pk=pk, patient=request.user.normaluser)
-        
-        if not appointment.can_be_cancelled_by_user():
-            return Response(
-                {"detail": "This appointment cannot be cancelled based on the system policy."}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-            
         serializer = AppointmentCancelSerializer(data=request.data)
         if serializer.is_valid():
-            with transaction.atomic():
-                appointment.status = Appointment.Status.CANCELLED
-                appointment.cancelled_by = request.user
-                appointment.cancelled_at = timezone.now()
-                appointment.cancellation_reason = serializer.validated_data.get("cancellation_reason", "")
-                appointment.save()
-                
-                slot = appointment.slot
-                slot.status = AppointmentSlot.Status.AVAILABLE
-                slot.save(update_fields=["status"])
-                
+            try:
+                cancel_patient_appointment(
+                    appointment_id=pk,
+                    patient=request.user.normaluser,
+                    reason=serializer.validated_data.get("cancellation_reason", ""),
+                )
+            except Appointment.DoesNotExist:
+                return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+            except CancellationNotAllowed:
+                return Response(
+                    {"detail": "This appointment cannot be cancelled based on the system policy."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             return Response({"detail": "Appointment cancelled successfully."})
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -133,33 +137,27 @@ class AdminAppointmentListView(generics.ListAPIView):
 class AdminAppointmentUpdateView(generics.UpdateAPIView):
     serializer_class = AdminAppointmentUpdateSerializer
     permission_classes = (IsAdminRole,)
-    queryset = Appointment.objects.all()
+    queryset = Appointment.objects.select_related("patient", "slot")
 
-    @transaction.atomic
-    def perform_update(self, serializer):
-        old_status = serializer.instance.status
-        instance = serializer.save()
-        new_status = instance.status
-        
-        if new_status == Appointment.Status.APPROVED and old_status != Appointment.Status.APPROVED:
-            instance.approved_by = self.request.user
-            instance.approved_at = timezone.now()
-            instance.save(update_fields=["approved_by", "approved_at"])
-            
-            # ارسال پیامک تایید نوبت
-            date_str = instance.slot.date.strftime("%Y-%m-%d")
-            time_str = instance.slot.start_at.strftime("%H:%M")
-            send_appt_approved(instance.patient.phone_number, date_str, time_str)
-            
-        if new_status in [Appointment.Status.REJECTED, Appointment.Status.CANCELLED] and \
-           old_status not in [Appointment.Status.REJECTED, Appointment.Status.CANCELLED]:
-            slot = instance.slot
-            slot.status = AppointmentSlot.Status.AVAILABLE
-            slot.save(update_fields=["status"])
-            
-            # ارسال پیامک رد نوبت
-            date_str = instance.slot.date.strftime("%Y-%m-%d")
-            send_appt_rejected(instance.patient.phone_number, date_str)
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(
+            instance, data=request.data, partial=kwargs.pop("partial", False)
+        )
+        serializer.is_valid(raise_exception=True)
+        target_status = serializer.validated_data.get("status", instance.status)
+        admin_notes = serializer.validated_data.get("admin_notes")
+        try:
+            result = transition_appointment(
+                appointment_id=instance.pk,
+                target_status=target_status,
+                actor=request.user,
+                admin_notes=admin_notes,
+            )
+        except InvalidTransition as exc:
+            return Response({"status": str(exc)}, status=status.HTTP_409_CONFLICT)
+        output = self.get_serializer(result.appointment)
+        return Response(output.data)
 
 
 class AdminAppointmentCalendarView(APIView):
@@ -199,23 +197,18 @@ class GuestAppointmentCreateView(generics.CreateAPIView):
     permission_classes = [AllowAny]
     authentication_classes = [] # <--- هیچ توکنی بررسی نشود
 
-    @transaction.atomic
-    def perform_create(self, serializer):
-        slot = serializer.validated_data["slot"]
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            key = parse_idempotency_key(request.headers.get("Idempotency-Key"))
+        except IdempotencyConflict as exc:
+            return Response({"idempotency_key": str(exc)}, status=status.HTTP_409_CONFLICT)
+        slot_id = serializer.validated_data["slot_id"]
         phone = serializer.validated_data["phone_number"]
         first_name = serializer.validated_data["first_name"]
         last_name = serializer.validated_data["last_name"]
         reason = serializer.validated_data.get("reason", "")
-
-        # قفل کردن اسلات برای جلوگیری از رزرو همزمان
-        locked_slot = AppointmentSlot.objects.select_for_update().get(pk=slot.pk)
-        
-        admin_phones = User.objects.filter(role="ADMIN", is_active=True).values_list('phone_number', flat=True)
-        for phone in admin_phones:
-            send_admin_alert(phone, "نوبت جدید")
-
-        if locked_slot.status != AppointmentSlot.Status.AVAILABLE:
-            raise ValidationError({"slot_id": "این زمان در همین لحظه توسط شخص دیگری رزرو شد."})
 
         # پیدا کردن کاربر موجود یا ساخت کاربر جدید (بدون رمز عبور)
         user, created = NormalUser.objects.get_or_create(
@@ -233,20 +226,23 @@ class GuestAppointmentCreateView(generics.CreateAPIView):
             user.last_name = last_name
             user.save(update_fields=["first_name", "last_name"])
 
-        # ثبت نوبت
-        appointment = Appointment.objects.create(
-            patient=user,
-            slot=locked_slot,
-            status=Appointment.Status.PENDING,
-            reason=reason
+        try:
+            result = book_appointment(
+                patient=user,
+                slot_id=slot_id,
+                reason=reason,
+                idempotency_key=key,
+            )
+        except AppointmentSlot.DoesNotExist:
+            return Response({"slot_id": "Slot not found."}, status=status.HTTP_404_NOT_FOUND)
+        except SlotUnavailable as exc:
+            return Response({"slot_id": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except IdempotencyConflict as exc:
+            return Response({"idempotency_key": str(exc)}, status=status.HTTP_409_CONFLICT)
+        return Response(
+            AppointmentListSerializer(result.appointment, context={"request": request}).data,
+            status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
         )
-
-        # تغییر وضعیت اسلات به رزرو شده
-        locked_slot.status = AppointmentSlot.Status.BOOKED
-        locked_slot.save(update_fields=["status"])
-
-        # پاسخ به فرانت‌اند
-        serializer.instance = appointment
         
 class AdminSlotDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Admin view to retrieve, update, or delete a specific slot."""
@@ -258,7 +254,9 @@ class AdminSlotDetailView(generics.RetrieveUpdateDestroyAPIView):
         instance = self.get_object()
         
         # Prevent deletion of a slot that is already booked
-        if instance.status == AppointmentSlot.Status.BOOKED:
+        if instance.appointments.filter(
+            status__in=[Appointment.Status.PENDING, Appointment.Status.APPROVED]
+        ).exists():
             return Response(
                 {"detail": "امکان حذف زمانی که برای آن نوبت رزرو شده وجود ندارد."},
                 status=status.HTTP_400_BAD_REQUEST
