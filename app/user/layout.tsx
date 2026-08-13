@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import UserSidebar from "@/components/user/user-sidebar";
 import MobileSidebar from "@/components/user/mobile-sidebar";
 import { Loader2 } from "lucide-react";
+import { getCurrentUser, restoreSession } from "@/lib/auth";
 
 export default function UserLayout({
   children,
@@ -14,13 +15,17 @@ export default function UserLayout({
   const [isAuth, setIsAuth] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const role = localStorage.getItem("user_role");
-    if (!token || (role !== "USER")) {
-      router.replace("/login");
-    } else {
+    let active = true;
+    const authorize = async () => {
+      const restored = await restoreSession();
+      if (!restored || !active) return router.replace("/login");
+      const user = await getCurrentUser();
+      if (!active) return;
+      if (user.role !== "USER") return router.replace("/login");
       setIsAuth(true);
-    }
+    };
+    void authorize();
+    return () => { active = false; };
   }, [router]);
 
   if (!isAuth) return <div className="flex h-screen w-full items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-[#2993A3]" /></div>;

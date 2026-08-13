@@ -6,6 +6,8 @@ import { Eye, EyeOff, ChevronLeft, CheckCircle2, ChevronRight } from 'lucide-rea
 import Image from 'next/image';
 import { toast } from 'sonner';
 import Link from 'next/link';
+import api from '@/lib/api';
+import { getCurrentUser, restoreSession, setAccessToken } from '@/lib/auth';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -22,19 +24,21 @@ export default function LoginPage() {
 
   // --- Redirect if already logged in ---
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const userRole = localStorage.getItem("user_role");
-
-    if (token && userRole) {
-      // If token exists, send them to the correct dashboard
-      if (userRole === 'DOCTOR') {
+    let active = true;
+    const redirectExistingSession = async () => {
+      if (!(await restoreSession()) || !active) return;
+      const user = await getCurrentUser();
+      if (!active) return;
+      if (user.role === 'DOCTOR') {
         router.push("/doctor/");
-      } else if (userRole === 'ADMIN') {
+      } else if (user.role === 'ADMIN') {
         router.push("/admin/");
       } else {
         router.push("/user/");
       }
-    }
+    };
+    void redirectExistingSession();
+    return () => { active = false; };
   }, [router]);
 
   // --- Handlers ---
@@ -42,15 +46,6 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-
-    const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
-    if (!API_URL) {
-      console.error("NEXT_PUBLIC_API_URL is not defined in environment variables.");
-      setError("خطای تنظیمات سرور");
-      setLoading(false);
-      return;
-    }
 
     // Convert Iranian phone format (0912...) to E.164 format (+98912...)
     let formattedPhone = phone.trim();
@@ -62,28 +57,13 @@ export default function LoginPage() {
     const userType = activeTab === 'doctor' ? 'DOCTOR' : 'USER';
 
     try {
-      const response = await fetch(`${API_URL}/api/v1/auth/login/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await api.post('/auth/login/', {
           phone_number: formattedPhone,
           password: password,
           user_type: userType
-        }),
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        // Extract DRF validation errors if they exist
-        const errorMsg = data.detail || data.phone_number || data.password || "اطلاعات ورود نامعتبر است.";
-        throw new Error(typeof errorMsg === 'string' ? errorMsg : "اطلاعات ورود نامعتبر است.");
-      }
-
-      // Store tokens and role securely
-      localStorage.setItem("access_token", data.access);
-      localStorage.setItem("refresh_token", data.refresh);
-      localStorage.setItem("user_role", data.user.role); // Save role for protected routes
+      const data = response.data;
+      setAccessToken(data.access);
 
       // --- Success Message (Sonner) ---
       toast.success("ورود موفقیت‌آمیز", {
@@ -103,7 +83,9 @@ export default function LoginPage() {
       }, 1500);
 
     } catch (err: any) {
-      setError(err.message);
+      const data = err.response?.data;
+      const errorMessage = data?.detail || data?.phone_number || data?.password || "اطلاعات ورود نامعتبر است.";
+      setError(typeof errorMessage === 'string' ? errorMessage : "اطلاعات ورود نامعتبر است.");
     } finally {
       setLoading(false);
     }

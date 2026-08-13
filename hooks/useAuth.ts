@@ -1,7 +1,7 @@
 // hooks/useAuth.ts
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { getCurrentUser, getAccessToken } from '@/lib/auth';
+import { getCurrentUser, restoreSession } from '@/lib/auth';
 import type { User } from '@/lib/types';
 
 export function useAuth() {
@@ -26,13 +26,19 @@ export function useAuth() {
   }, []);
 
   useEffect(() => {
-    const token = getAccessToken();
-    if (!token) {
-      setIsLoading(false);
-      router.replace('/login');
-      return;
-    }
-    refetch();
+    let active = true;
+    const loadSession = async () => {
+      const restored = await restoreSession();
+      if (!active) return;
+      if (!restored) {
+        setIsLoading(false);
+        router.replace('/login');
+        return;
+      }
+      await refetch();
+    };
+    void loadSession();
+    return () => { active = false; };
   }, [router, refetch]);
 
   return { user, setUser, isLoading, error, refetch };

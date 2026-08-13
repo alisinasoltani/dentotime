@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Paperclip, ArrowRight, Loader2 } from "lucide-react";
+import { getCurrentUser } from "@/lib/auth";
 
 interface ChatWindowProps {
     thread: ChatThread | null;
@@ -27,15 +28,7 @@ export default function ChatWindow({ thread, onBack }: ChatWindowProps) {
     const [currentUserId, setCurrentUserId] = useState<string>("");
 
     useEffect(() => {
-        const userStr = localStorage.getItem("user");
-        if (userStr) {
-            try {
-                const user = JSON.parse(userStr);
-                setCurrentUserId(user.id);
-            } catch (e) {
-                console.error("Failed to parse user from localStorage", e);
-            }
-        }
+        void getCurrentUser().then((user) => setCurrentUserId(String(user.id)));
     }, []);
 
     const fetchMessages = useCallback(async (isInitial: boolean) => {
@@ -189,7 +182,7 @@ export default function ChatWindow({ thread, onBack }: ChatWindowProps) {
                 ) : (
                     messages.map((msg) => {
                         const senderId = typeof msg.sender === 'object' ? msg.sender?.id : msg.sender;
-                        const isSender = senderId === currentUserId;
+                        const isSender = String(senderId) === currentUserId;
 
                         return (
                             <MessageBubble

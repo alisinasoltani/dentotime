@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { OTPVerification } from '@/components/ui/otp-input';
+import { setAccessToken } from '@/lib/auth';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -18,7 +19,8 @@ export default function SignupPage() {
   const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
-  const [otp, setOtp] = useState('');
+  const [challengeId, setChallengeId] = useState('');
+  const [otpToken, setOtpToken] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +32,11 @@ export default function SignupPage() {
     e.preventDefault();
     setLoading(true); setError(null);
     try {
-      await api.post('/auth/request-otp/', { phone_number: formatPhone(phone) });
+      const response = await api.post('/auth/request-otp/', {
+        phone_number: formatPhone(phone),
+        purpose: 'SIGNUP',
+      });
+      setChallengeId(response.data.challenge_id);
       toast.success("کد تایید ارسال شد.");
       setStep(2);
     } catch (err: any) { 
@@ -42,8 +48,13 @@ export default function SignupPage() {
 
   const handleVerifyOtp = async (code: string) => {
     try {
-      await api.post('/auth/verify-otp/', { phone_number: formatPhone(phone), code });
-      setOtp(code);
+      const response = await api.post('/auth/verify-otp/', {
+        phone_number: formatPhone(phone),
+        purpose: 'SIGNUP',
+        challenge_id: challengeId,
+        code,
+      });
+      setOtpToken(response.data.otp_token);
       setTimeout(() => setStep(3), 1500); 
       return true;
     } catch (err: any) {
@@ -53,7 +64,11 @@ export default function SignupPage() {
 
   const handleResendOtp = async () => {
     try {
-      await api.post('/auth/request-otp/', { phone_number: formatPhone(phone) });
+      const response = await api.post('/auth/request-otp/', {
+        phone_number: formatPhone(phone),
+        purpose: 'SIGNUP',
+      });
+      setChallengeId(response.data.challenge_id);
       toast.success("کد جدید ارسال شد.");
     } catch (err: any) {
       toast.error("خطا در ارسال مجدد کد.");
@@ -74,13 +89,11 @@ export default function SignupPage() {
         password_confirm: passwordConfirm,
         first_name: firstName,
         last_name: lastName,
-        otp_code: otp
+        otp_token: otpToken
       });
 
-      if (res.data.access && res.data.refresh) {
-        localStorage.setItem("access_token", res.data.access);
-        localStorage.setItem("refresh_token", res.data.refresh);
-        localStorage.setItem("user_role", res.data.user.role);
+      if (res.data.access) {
+        setAccessToken(res.data.access);
 
         toast.success("ثبت نام موفقیت‌آمیز بود");
         setTimeout(() => router.push(activeTab === 'doctor' ? "/doctor/" : "/user/"), 1500);

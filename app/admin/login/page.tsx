@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import axios from "axios";
+import { setAccessToken } from "@/lib/auth";
 
 export default function AdminLoginPage() {
   const router = useRouter();
@@ -32,10 +33,7 @@ export default function AdminLoginPage() {
         user_type: "ADMIN",
       });
 
-      localStorage.setItem("access_token", res.data.access);
-      localStorage.setItem("refresh_token", res.data.refresh);
-      localStorage.setItem("user", JSON.stringify(res.data.user));
-      localStorage.setItem("user_role", res.data.user.role);
+      setAccessToken(res.data.access);
 
       router.push("/admin");
     } catch (err: any) {

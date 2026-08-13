@@ -15,6 +15,7 @@ import {
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
 import Image from "next/image";
+import { clearTokens } from "@/lib/auth";
 
 const navItems = [
     { title: "نوبت ها", href: "/user/appointments", icon: UserCheck },
@@ -30,8 +31,6 @@ export default function UserSidebar({ onClose }: { onClose?: () => void }) {
     useEffect(() => {
         const fetchUserData = async () => {
             try {
-                const token = localStorage.getItem("access_token");
-                if (!token) return;
                 const res = await api.get("/users/me/");
                 setUser(res.data);
             } catch (err) {
@@ -44,10 +43,8 @@ export default function UserSidebar({ onClose }: { onClose?: () => void }) {
     const handleLogout = async () => {
         setIsLoggingOut(true);
         try {
-            const refresh = localStorage.getItem("refresh_token");
-            if (refresh) await api.post("/auth/logout/", { refresh });
-            localStorage.removeItem("access_token");
-            localStorage.removeItem("refresh_token");
+            await api.post("/auth/logout/");
+            clearTokens();
             router.push("/");
         } catch (error) {
             console.error("Logout failed", error);

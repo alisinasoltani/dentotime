@@ -16,13 +16,19 @@ export default function ForgotPasswordPage() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [challengeId, setChallengeId] = useState('');
+  const [otpToken, setOtpToken] = useState('');
 
   const formatPhone = (p: string) => p.startsWith("09") ? "+98" + p.substring(1) : p;
 
   const sendOtp = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true); setError(null);
     try {
-      await api.post('/auth/request-otp/', { phone_number: formatPhone(phone) });
+      const response = await api.post('/auth/request-otp/', {
+        phone_number: formatPhone(phone),
+        purpose: 'PASSWORD_RESET',
+      });
+      setChallengeId(response.data.challenge_id);
       toast.success("کد بازیابی ارسال شد.");
       setStep(2);
     } catch (err: any) { setError(err.response?.data?.detail || "خطا"); } 
@@ -31,7 +37,13 @@ export default function ForgotPasswordPage() {
 
   const verifyOtp = async (code: string) => {
     try {
-      await api.post('/auth/verify-otp/', { phone_number: formatPhone(phone), code });
+      const response = await api.post('/auth/verify-otp/', {
+        phone_number: formatPhone(phone),
+        purpose: 'PASSWORD_RESET',
+        challenge_id: challengeId,
+        code,
+      });
+      setOtpToken(response.data.otp_token);
       setTimeout(() => setStep(3), 1500); // مکث برای نمایش انیمیشن
       return true;
     } catch (err: any) { return false; }
@@ -39,7 +51,11 @@ export default function ForgotPasswordPage() {
 
   const resendOtp = async () => {
     try {
-      await api.post('/auth/request-otp/', { phone_number: formatPhone(phone) });
+      const response = await api.post('/auth/request-otp/', {
+        phone_number: formatPhone(phone),
+        purpose: 'PASSWORD_RESET',
+      });
+      setChallengeId(response.data.challenge_id);
       toast.success("کد جدید ارسال شد.");
     } catch (err: any) { toast.error("خطا در ارسال مجدد کد."); }
   };
@@ -47,7 +63,11 @@ export default function ForgotPasswordPage() {
   const resetPassword = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true); setError(null);
     try {
-      await api.post('/auth/reset-password/', { phone_number: formatPhone(phone), new_password: newPassword });
+      await api.post('/auth/reset-password/', {
+        phone_number: formatPhone(phone),
+        otp_token: otpToken,
+        new_password: newPassword,
+      });
       toast.success("رمز عبور تغییر کرد. وارد شوید.");
       router.push('/login');
     } catch (err: any) { setError(err.response?.data?.detail || "خطا"); } 

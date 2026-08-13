@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, Paperclip, ArrowRight, Loader2, X, Headset } from "lucide-react";
 import { toast } from "sonner";
+import { getCurrentUser } from "@/lib/auth";
 
 interface ChatWindowProps {
     thread: ChatThread | null;
@@ -30,10 +31,7 @@ export default function UserChatWindow({ thread, onBack }: ChatWindowProps) {
     const [user, setUser] = useState<any>(null);
 
     useEffect(() => {
-        const userStr = localStorage.getItem("user");
-        if (userStr) {
-            try { setUser(JSON.parse(userStr)); } catch (e) {}
-        }
+        void getCurrentUser().then(setUser);
     }, []);
 
     const fetchMessages = useCallback(async (isInitial: boolean) => {

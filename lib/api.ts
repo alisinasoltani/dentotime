@@ -1,48 +1,31 @@
-// =============================================================================
-// lib/api.ts
-// Axios instance + interceptors
-// =============================================================================
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
-import axios, {
-  type AxiosError,
-  type InternalAxiosRequestConfig,
-} from 'axios';
 import {
-  getAccessToken,
-  getRefreshToken,
-  setTokens,
   clearTokens,
+  getAccessToken,
+  getDeviceId,
+  restoreSession,
+  setAccessToken,
 } from './auth';
 import { API_BASE_URL } from './config';
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  timeout: 0, 
+  headers: { 'Content-Type': 'application/json' },
+  timeout: 30_000,
+  withCredentials: true,
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("access_token");
-  
-  // لیست مسیرهایی که نباید توکن بفرستیم (مسیرهای عمومی و لاگین)
-  const publicUrls = ['/auth/login/', '/auth/signup/', '/auth/request-otp/', '/auth/verify-otp/', '/auth/reset-password/'];
-  const isPublicUrl = publicUrls.some(url => config.url?.includes(url));
-
-  // اگر توکن داشتیم و مسیر عمومی نبود، توکن را در هدر بفرست
-  if (token && token !== "null" && token !== "undefined" && !isPublicUrl) {
-    config.headers.Authorization = `Bearer ${token}`;
-  } else {
-    // در غیر اینصورت، هدر Authorization را کاملا حذف کن
-    delete config.headers.Authorization;
-  }
-  
+  const token = getAccessToken();
+  const deviceId = getDeviceId();
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  else delete config.headers.Authorization;
+  if (deviceId) config.headers['X-Device-ID'] = deviceId;
   return config;
 });
 
 type RetryableConfig = InternalAxiosRequestConfig & { _retry?: boolean };
-
 let isRefreshing = false;
 let failedQueue: Array<{
   resolve: (token: string) => void;
@@ -50,13 +33,10 @@ let failedQueue: Array<{
 }> = [];
 
 function processQueue(error: unknown, token: string | null): void {
-  failedQueue.forEach(({ resolve, reject }) => {
-    if (error) {
-      reject(error);
-    } else if (token) {
-      resolve(token);
-    }
-  });
+  for (const pending of failedQueue) {
+    if (error) pending.reject(error);
+    else if (token) pending.resolve(token);
+  }
   failedQueue = [];
 }
 
@@ -68,66 +48,44 @@ function getLoginPath(): string {
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
-    const originalRequest = error.config as RetryableConfig;
-    
-    // بررسی اینکه آیا مسیر درخواست، مربوط به لاگین یا رفرش توکن است یا خیر
-    const isAuthEndpoint = originalRequest.url?.includes('/auth/login') || 
-                           originalRequest.url?.includes('/auth/token/refresh') ||
-                           originalRequest.url?.includes('/auth/signup');
+    const originalRequest = error.config as RetryableConfig | undefined;
+    if (!originalRequest) return Promise.reject(error);
+    const isAuthEndpoint = ['/auth/login', '/auth/token/refresh', '/auth/signup'].some(
+      (path) => originalRequest.url?.includes(path),
+    );
 
-    // اگر خطا 401 است و اولین تلاش است و مربوط به صفحه لاگین/رفرش نیست
-    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
-      originalRequest._retry = true;
-      
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        }).then((token) => {
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-          return api(originalRequest);
-        }).catch((err) => Promise.reject(err));
-      }
-
-      isRefreshing = true;
-      const refreshToken = getRefreshToken();
-      
-      if (!refreshToken) {
-        isRefreshing = false;
-        clearTokens();
-        if (typeof window !== 'undefined') {
-          window.location.href = getLoginPath();
-        }
-        return Promise.reject(error);
-      }
-
-      try {
-        const res = await api.post('/auth/token/refresh/', {
-          refresh: refreshToken,
-        });
-        
-        const newAccessToken = res.data.access;
-        const newRefreshToken = res.data.refresh;
-        
-        setTokens(newAccessToken, newRefreshToken);
-        api.defaults.headers.common.Authorization = `Bearer ${newAccessToken}`;
-        
-        processQueue(null, newAccessToken);
-        
-        return api(originalRequest);
-      } catch (err) {
-        processQueue(err, null);
-        clearTokens();
-        
-        if (typeof window !== 'undefined') {
-          window.location.href = getLoginPath();
-        }
-        return Promise.reject(err);
-      } finally {
-        isRefreshing = false;
-      }
+    if (error.response?.status !== 401 || originalRequest._retry || isAuthEndpoint) {
+      return Promise.reject(error);
     }
-    return Promise.reject(error);
-  }
+    originalRequest._retry = true;
+
+    if (isRefreshing) {
+      return new Promise<string>((resolve, reject) => {
+        failedQueue.push({ resolve, reject });
+      }).then((token) => {
+        originalRequest.headers.Authorization = `Bearer ${token}`;
+        return api(originalRequest);
+      });
+    }
+
+    isRefreshing = true;
+    try {
+      const restored = await restoreSession(true);
+      const token = getAccessToken();
+      if (!restored || !token) throw error;
+      setAccessToken(token);
+      processQueue(null, token);
+      originalRequest.headers.Authorization = `Bearer ${token}`;
+      return api(originalRequest);
+    } catch (refreshError) {
+      processQueue(refreshError, null);
+      clearTokens();
+      if (typeof window !== 'undefined') window.location.href = getLoginPath();
+      return Promise.reject(refreshError);
+    } finally {
+      isRefreshing = false;
+    }
+  },
 );
 
 export default api;

@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowRight, Heart, Star, Stethoscope, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
+import { restoreSession } from '@/lib/auth';
 
 export default function DoctorDetailPage() {
   const { id } = useParams();
@@ -23,14 +24,10 @@ export default function DoctorDetailPage() {
   const [comment, setComment] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
-  const isAuthenticated = () => {
-    const token = localStorage.getItem("access_token");
-    return token && token !== "null";
-  };
-
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
+      await restoreSession();
       const [docData, revData] = await Promise.all([
         getPublicDoctorDetail(id as string),
         getDoctorReviews(id as string)
@@ -50,7 +47,7 @@ export default function DoctorDetailPage() {
   }, [fetchData]);
 
   const handleLike = async () => {
-    if (!isAuthenticated()) {
+    if (!(await restoreSession())) {
       toast.error("برای لایک کردن ابتدا باید وارد شوید.");
       router.push("/login");
       return;
@@ -80,7 +77,7 @@ export default function DoctorDetailPage() {
 
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isAuthenticated()) {
+    if (!(await restoreSession())) {
       toast.error("برای ثبت نظر ابتدا باید وارد شوید.");
       router.push("/login");
       return;

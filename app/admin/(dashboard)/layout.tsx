@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import AdminSidebar from "@/components/admin/admin-sidebar";
 import MobileSidebar from "@/components/admin/mobile-sidebar";
 import { Loader2 } from "lucide-react";
+import { getCurrentUser, restoreSession } from "@/lib/auth";
 
 export default function AdminDashboardLayout({
   children,
@@ -15,15 +16,17 @@ export default function AdminDashboardLayout({
   const [isAuthorized, setIsAuthorized] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem("access_token");
-    const userRole = localStorage.getItem("user_role");
-
-    // اگر توکن نداشت یا ادمین نبود، به صفحه لاگین ادمین پرتاب شود
-    if (!token || userRole !== "ADMIN") {
-      router.replace("/admin/login");
-    } else {
+    let active = true;
+    const authorize = async () => {
+      const restored = await restoreSession();
+      if (!restored || !active) return router.replace("/admin/login");
+      const user = await getCurrentUser();
+      if (!active) return;
+      if (user.role !== "ADMIN") return router.replace("/admin/login");
       setIsAuthorized(true);
-    }
+    };
+    void authorize();
+    return () => { active = false; };
   }, [router]);
 
   // نمایش لودر تا زمانی که بررسی توکن تمام شود

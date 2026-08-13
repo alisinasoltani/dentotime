@@ -32,20 +32,6 @@ export default function ChatWindow({ thread, onBack }: ChatWindowProps) {
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [currentUserId, setCurrentUserId] = useState<string>("");
-
-    useEffect(() => {
-        const userStr = localStorage.getItem("user");
-        if (userStr) {
-            try {
-                const user = JSON.parse(userStr);
-                setCurrentUserId(user.id);
-            } catch (e) {
-                console.error("Failed to parse user from localStorage", e);
-            }
-        }
-    }, []);
-
     const fetchMessages = useCallback(async (isInitial: boolean) => {
         if (!thread) return;
         try {

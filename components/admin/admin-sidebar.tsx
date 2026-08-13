@@ -19,6 +19,7 @@ import {
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
 import Image from "next/image";
+import { clearTokens } from "@/lib/auth";
 
 const navItems = [
     { title: "گفت و گو ها", href: "/admin/chat", icon: MessageSquare },
@@ -38,9 +39,6 @@ export default function AdminSidebar({ onClose }: { onClose?: () => void }) {
     useEffect(() => {
         const fetchAdminData = async () => {
             try {
-                const token = localStorage.getItem("access_token");
-                if (!token) return;
-
                 const res = await api.get("/users/me/");
                 setAdminUser(res.data);
             } catch (err) {
@@ -53,10 +51,8 @@ export default function AdminSidebar({ onClose }: { onClose?: () => void }) {
     const handleLogout = async () => {
         setIsLoggingOut(true);
         try {
-            const refresh = localStorage.getItem("refresh_token");
-            await api.post("/auth/logout/", { refresh });
-            localStorage.removeItem("access_token");
-            localStorage.removeItem("refresh_token");
+            await api.post("/auth/logout/");
+            clearTokens();
             router.push("/admin/login");
         } catch (error) {
             console.error("Logout failed", error);
