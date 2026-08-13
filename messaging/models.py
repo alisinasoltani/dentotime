@@ -82,12 +82,11 @@ class MessageAttachment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name="attachments")
-
-    file_url = models.URLField()
-    file_key = models.CharField(max_length=500)
-    file_name = models.CharField(max_length=255)
-    file_size = models.BigIntegerField()
-    file_content_type = models.CharField(max_length=100, blank=True, default="")
+    asset = models.OneToOneField(
+        "core.FileAsset",
+        on_delete=models.PROTECT,
+        related_name="message_attachment",
+    )
 
     is_3d_scan = models.BooleanField(default=False, db_index=True)
 
@@ -98,12 +97,12 @@ class MessageAttachment(models.Model):
     def clean(self):
         if self.message.thread.thread_type != MessageThread.ThreadType.DOCTOR_ADMIN:
             raise ValidationError("Attachments are only allowed in DOCTOR-ADMIN threads.")
-        
-        from core.models import SystemSettings
-        settings = SystemSettings.load()
-        max_size = settings.doctor_attachment_max_size_mb * 1024 * 1024
-        if self.file_size > max_size:
-            raise ValidationError({"file_size": f"File exceeds max size of {settings.doctor_attachment_max_size_mb}MB."})
+        from core.models import FileAsset
+
+        if self.asset_id and self.asset.purpose != FileAsset.Purpose.CHAT_ATTACHMENT:
+            raise ValidationError({"asset": "Only chat-attachment assets may be used here."})
+        if self.asset_id and self.asset.scope_thread_id != self.message.thread_id:
+            raise ValidationError({"asset": "The asset is not scoped to this thread."})
 
     class Meta:
         indexes = [models.Index(fields=["is_3d_scan"])]

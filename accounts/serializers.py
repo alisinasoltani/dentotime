@@ -7,6 +7,8 @@ from django.utils import timezone
 from rest_framework import serializers
 from django.db.models import Count
 
+from core.assets import AssetBindingError, lock_attachable_asset
+from core.models import FileAsset
 from .models import NormalUser, Doctor, DoctorReview, DoctorDocument, User, OTPChallenge
 from .otp import consume_grant
 from .validators import normalize_phone_number, validate_e164_phone
@@ -122,10 +124,27 @@ class PasswordChangeSerializer(serializers.Serializer):
 
 class DoctorDocumentSerializer(serializers.ModelSerializer):
     """Serializer for doctor verification documents."""
+
+    asset_id = serializers.UUIDField(source="asset.id", read_only=True)
+    file_name = serializers.CharField(source="asset.original_name", read_only=True)
+    file_size = serializers.IntegerField(source="asset.expected_size", read_only=True)
+    file_content_type = serializers.CharField(source="asset.claimed_mime", read_only=True)
+    state = serializers.CharField(source="asset.state", read_only=True)
+    scan_status = serializers.CharField(source="asset.scan_status", read_only=True)
+
     class Meta:
         model = DoctorDocument
-        fields = ("id", "file_url", "file_key", "file_name", "file_size", "file_content_type", "uploaded_at")
-        read_only_fields = ("uploaded_at",)
+        fields = (
+            "id",
+            "asset_id",
+            "file_name",
+            "file_size",
+            "file_content_type",
+            "state",
+            "scan_status",
+            "uploaded_at",
+        )
+        read_only_fields = fields
 
 class AdminUserListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for admin user lists."""
@@ -160,7 +179,12 @@ class DoctorVerificationStatusSerializer(serializers.ModelSerializer):
 
 class DoctorVerificationSubmitSerializer(serializers.ModelSerializer):
     """Serializer for doctors submitting their verification application."""
-    documents = DoctorDocumentSerializer(many=True)
+    asset_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        allow_empty=False,
+        max_length=10,
+        write_only=True,
+    )
     
     # Add first_name and last_name so the frontend can update them in the same request
     first_name = serializers.CharField(max_length=150, required=True)
@@ -171,8 +195,15 @@ class DoctorVerificationSubmitSerializer(serializers.ModelSerializer):
         fields = (
             "first_name", "last_name", # <--- ADDED
             "account_owner", "agreed_to_terms", "id_number", "medical_registration_number",
-            "supervising_doctor_name", "clinic_name", "documents"
+            "supervising_doctor_name", "clinic_name", "asset_ids"
         )
+
+    def to_internal_value(self, data):
+        if "documents" in data or "file_url" in data or "file_key" in data:
+            raise serializers.ValidationError(
+                {"asset_ids": "Submit server-issued asset IDs, not file URLs or storage keys."}
+            )
+        return super().to_internal_value(data)
 
     def validate(self, attrs):
         ao = attrs.get("account_owner")
@@ -182,13 +213,11 @@ class DoctorVerificationSubmitSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"clinic_name": "وارد کردن نام کلینیک الزامی است."})
         if not attrs.get("agreed_to_terms"):
             raise serializers.ValidationError({"agreed_to_terms": "پذیرش قوانین الزامی است."})
-        if not attrs.get("documents"):
-            raise serializers.ValidationError({"documents": "بارگذاری حداقل یک مدرک الزامی است."})
         return attrs
 
     @transaction.atomic
     def update(self, instance, validated_data):
-        docs_data = validated_data.pop("documents", [])
+        asset_ids = validated_data.pop("asset_ids")
         
         # Update User profile fields (first_name, last_name)
         instance.first_name = validated_data.get("first_name", instance.first_name)
@@ -206,8 +235,23 @@ class DoctorVerificationSubmitSerializer(serializers.ModelSerializer):
         instance.rejection_note = "" 
         instance.save()
 
-        for doc_data in docs_data:
-            DoctorDocument.objects.create(doctor=instance, **doc_data)
+        try:
+            assets = [
+                lock_attachable_asset(
+                    asset_id=asset_id,
+                    owner=instance,
+                    purpose=FileAsset.Purpose.VERIFICATION_DOCUMENT,
+                    doctor=instance,
+                )
+                for asset_id in asset_ids
+            ]
+        except AssetBindingError as exc:
+            raise serializers.ValidationError({"asset_ids": str(exc)}) from exc
+
+        for asset in assets:
+            document = DoctorDocument(doctor=instance, asset=asset)
+            document.full_clean()
+            document.save()
             
         return instance
 

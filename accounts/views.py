@@ -5,7 +5,7 @@ from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -19,7 +19,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
-from .models import User, NormalUser, Doctor, DoctorReview, OTPChallenge
+from .models import User, NormalUser, Doctor, DoctorDocument, DoctorReview, OTPChallenge
 from .otp import (
     GENERIC_REQUEST_MESSAGE,
     GENERIC_VERIFY_ERROR,
@@ -243,7 +243,9 @@ class AdminDoctorListView(ListAPIView):
     ordering_fields = ["date_joined", "verification_status"]
     
     def get_queryset(self):
-        qs = Doctor.objects.all().prefetch_related('documents')
+        qs = Doctor.objects.all().prefetch_related(
+            Prefetch("documents", queryset=DoctorDocument.objects.select_related("asset"))
+        )
         status = self.request.query_params.get("verification_status")
         if status:
             qs = qs.filter(verification_status=status)
@@ -288,7 +290,12 @@ class DoctorVerificationStatusView(APIView):
     permission_classes = (IsDoctorRole,)
 
     def get(self, request):
-        doctor = request.user.doctor_profile
+        doctor = (
+            Doctor.objects.prefetch_related(
+                Prefetch("documents", queryset=DoctorDocument.objects.select_related("asset"))
+            )
+            .get(pk=request.user.pk)
+        )
         serializer = DoctorVerificationStatusSerializer(doctor)
         return Response(serializer.data)
 

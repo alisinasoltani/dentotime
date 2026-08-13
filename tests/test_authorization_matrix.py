@@ -486,12 +486,12 @@ def test_inactive_approved_doctor_is_not_public_or_rateable(authorization_contex
     ("actor_name", "purpose", "expected_status"),
     [
         ("patient", "profile_picture", 403),
-        ("doctor_unverified", "verification_document", 201),
-        ("doctor_unverified", "chat_attachment", 403),
-        ("doctor_rejected", "verification_document", 201),
-        ("doctor_approved", "chat_attachment", 201),
-        ("admin", "chat_attachment", 201),
-        ("admin", "verification_document", 403),
+        ("doctor_unverified", "verification_document", 410),
+        ("doctor_unverified", "chat_attachment", 410),
+        ("doctor_rejected", "verification_document", 410),
+        ("doctor_approved", "chat_attachment", 410),
+        ("admin", "chat_attachment", 410),
+        ("admin", "verification_document", 410),
     ],
 )
 def test_upload_purpose_policy(

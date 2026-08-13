@@ -1,6 +1,6 @@
 from django.shortcuts import get_object_or_404
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.views import APIView
@@ -90,7 +90,17 @@ class MessageListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         thread = self.get_thread()
-        return Message.objects.filter(thread=thread).select_related("sender").prefetch_related("attachments").order_by("created_at")
+        return (
+            Message.objects.filter(thread=thread)
+            .select_related("sender")
+            .prefetch_related(
+                Prefetch(
+                    "attachments",
+                    queryset=MessageAttachment.objects.select_related("asset"),
+                )
+            )
+            .order_by("created_at")
+        )
 
     @transaction.atomic
     def perform_create(self, serializer):
@@ -130,7 +140,16 @@ class MessageListCreateView(generics.ListCreateAPIView):
         self.perform_create(serializer)
         
         # Re-fetch the message with attachments to serialize for the response
-        message = Message.objects.select_related("sender").prefetch_related("attachments").get(pk=serializer.instance.pk)
+        message = (
+            Message.objects.select_related("sender")
+            .prefetch_related(
+                Prefetch(
+                    "attachments",
+                    queryset=MessageAttachment.objects.select_related("asset"),
+                )
+            )
+            .get(pk=serializer.instance.pk)
+        )
         response_serializer = MessageSerializer(message, context=self.get_serializer_context())
         
         headers = self.get_success_headers(response_serializer.data)
