@@ -144,7 +144,7 @@ def isolate_authorization_side_effects(monkeypatch, settings):
         "appointments.services.queue_admin_alert",
         "accounts.views.send_doctor_approved",
         "accounts.views.send_doctor_rejected",
-        "messaging.views.send_new_message",
+        "messaging.views.queue_new_message",
     ):
         monkeypatch.setattr(target, lambda *args, **kwargs: None)
 

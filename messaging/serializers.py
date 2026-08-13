@@ -1,9 +1,16 @@
+from django.db import transaction
+from django.utils import timezone
 from rest_framework import serializers
+
 from accounts.models import User
-from messaging.models import MessageThread, Message, MessageAttachment
+from accounts.validators import normalize_phone_number
 from core.assets import AssetBindingError, lock_attachable_asset
 from core.models import FileAsset
-from accounts.validators import validate_e164_phone
+from messaging.models import Message, MessageAttachment, MessageThread
+
+
+MAX_MESSAGE_LENGTH = 4000
+
 
 class MessageAttachmentSerializer(serializers.ModelSerializer):
     asset_id = serializers.UUIDField(source="asset.id", read_only=True)
@@ -28,16 +35,52 @@ class MessageAttachmentSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
+
+class MessageSenderSerializer(serializers.Serializer):
+    id = serializers.SerializerMethodField()
+    role = serializers.CharField(source="sender_type")
+    first_name = serializers.CharField(source="sender_first_name")
+    last_name = serializers.CharField(source="sender_last_name")
+
+    def get_id(self, obj):
+        return str(obj.sender_id) if obj.sender_id else None
+
+
 class MessageSerializer(serializers.ModelSerializer):
     attachments = MessageAttachmentSerializer(many=True, read_only=True)
-    sender_phone = serializers.CharField(source="sender.phone_number", read_only=True)
+    sender = MessageSenderSerializer(source="*", read_only=True)
+    is_internal_note = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ("id", "thread", "sender", "sender_phone", "sender_type", "body", "read_by_recipient", "created_at", "attachments")
-        read_only_fields = ("thread", "sender", "sender_type", "read_by_recipient", "created_at")
+        fields = (
+            "id",
+            "thread",
+            "sender",
+            "sender_type",
+            "body",
+            "visibility",
+            "is_internal_note",
+            "created_at",
+            "attachments",
+        )
+        read_only_fields = fields
+
+    def get_is_internal_note(self, obj):
+        return obj.visibility == Message.Visibility.ADMINS_ONLY
+
 
 class MessageCreateSerializer(serializers.ModelSerializer):
+    body = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=MAX_MESSAGE_LENGTH,
+        trim_whitespace=False,
+    )
+    visibility = serializers.ChoiceField(
+        choices=Message.Visibility.choices,
+        default=Message.Visibility.PARTICIPANTS,
+    )
     asset_ids = serializers.ListField(
         child=serializers.UUIDField(),
         required=False,
@@ -48,7 +91,7 @@ class MessageCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ("id", "body", "asset_ids")
+        fields = ("id", "body", "visibility", "asset_ids")
         read_only_fields = ("id",)
 
     def to_internal_value(self, data):
@@ -59,18 +102,36 @@ class MessageCreateSerializer(serializers.ModelSerializer):
         return super().to_internal_value(data)
 
     def validate(self, attrs):
-        if not attrs.get("body", "").strip() and not attrs.get("asset_ids"):
+        request = self.context["request"]
+        body = attrs.get("body", "")
+        asset_ids = attrs.get("asset_ids", [])
+        visibility = attrs.get("visibility", Message.Visibility.PARTICIPANTS)
+        attrs["body"] = body.strip()
+
+        if not attrs["body"] and not asset_ids:
             raise serializers.ValidationError("A message body or an attachment is required.")
+        if visibility == Message.Visibility.ADMINS_ONLY:
+            if not request.user.is_admin_role:
+                raise serializers.ValidationError(
+                    {"visibility": "Only administrators can create internal notes."}
+                )
+            if asset_ids:
+                raise serializers.ValidationError(
+                    {"asset_ids": "Internal notes cannot contain patient-visible attachments."}
+                )
+            if not attrs["body"]:
+                raise serializers.ValidationError(
+                    {"body": "Internal notes require a message body."}
+                )
         return attrs
 
     def create(self, validated_data):
-        # The 'thread' is passed from the view via serializer.save(thread=...)
-        thread = validated_data.get("thread")
+        thread = validated_data["thread"]
         asset_ids = validated_data.pop("asset_ids", [])
-        
-        # Check if attachments are being added to a non-doctor thread
-        if thread and asset_ids and thread.thread_type != MessageThread.ThreadType.DOCTOR_ADMIN:
-            raise serializers.ValidationError({"attachments": "Attachments are only allowed in Doctor-Admin threads."})
+        if asset_ids and thread.thread_type != MessageThread.ThreadType.DOCTOR_ADMIN:
+            raise serializers.ValidationError(
+                {"asset_ids": "Attachments are only allowed in doctor-admin threads."}
+            )
 
         try:
             assets = [
@@ -84,14 +145,19 @@ class MessageCreateSerializer(serializers.ModelSerializer):
             ]
         except AssetBindingError as exc:
             raise serializers.ValidationError({"asset_ids": str(exc)}) from exc
-        
-        # Create the message
+
+        sender = validated_data["sender"]
+        validated_data["sender_first_name"] = sender.first_name
+        validated_data["sender_last_name"] = sender.last_name
         message = Message.objects.create(**validated_data)
-        
-        # Create the attachments linked to the message
+
         scan_extensions = {".3dm", ".dcm", ".obj", ".ply", ".stl"}
         for asset in assets:
-            extension = "." + asset.original_name.rsplit(".", 1)[-1].lower() if "." in asset.original_name else ""
+            extension = (
+                "." + asset.original_name.rsplit(".", 1)[-1].lower()
+                if "." in asset.original_name
+                else ""
+            )
             attachment = MessageAttachment(
                 message=message,
                 asset=asset,
@@ -99,22 +165,64 @@ class MessageCreateSerializer(serializers.ModelSerializer):
             )
             attachment.full_clean()
             attachment.save()
-            
+
+        if message.visibility == Message.Visibility.PARTICIPANTS:
+            MessageThread.objects.filter(pk=thread.pk).update(
+                last_message_at=message.created_at,
+                updated_at=timezone.now(),
+            )
         return message
+
 
 class ParticipantSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ("id", "phone_number", "first_name", "last_name", "role", "profile_picture")
+        fields = (
+            "id",
+            "phone_number",
+            "first_name",
+            "last_name",
+            "role",
+            "profile_picture",
+        )
+
+
+class GuestContactSerializer(serializers.Serializer):
+    phone_number = serializers.CharField(source="guest_phone")
+    first_name = serializers.CharField(source="guest_first_name")
+    last_name = serializers.CharField(source="guest_last_name")
+
 
 class ThreadListSerializer(serializers.ModelSerializer):
     participant = ParticipantSerializer(read_only=True)
+    guest_contact = GuestContactSerializer(source="*", read_only=True)
     assigned_admin = ParticipantSerializer(read_only=True)
-    unread_count = serializers.IntegerField(read_only=True)
+    unread_count = serializers.IntegerField(read_only=True, default=0)
+    last_message = serializers.CharField(source="_last_message", read_only=True, default="")
 
     class Meta:
         model = MessageThread
-        fields = ("id", "thread_type", "participant", "assigned_admin", "status", "created_at", "last_message_at", "unread_count")
+        fields = (
+            "id",
+            "thread_type",
+            "participant",
+            "guest_contact",
+            "assigned_admin",
+            "status",
+            "created_at",
+            "last_message_at",
+            "last_message",
+            "unread_count",
+        )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.participant_id:
+            data["guest_contact"] = None
+        else:
+            data["participant"] = None
+        return data
+
 
 class AdminThreadUpdateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -122,15 +230,73 @@ class AdminThreadUpdateSerializer(serializers.ModelSerializer):
         fields = ("status", "assigned_admin")
 
     def validate_assigned_admin(self, value):
-        if value is not None and not (
-            value.is_active and value.is_admin_role
-        ):
-            raise serializers.ValidationError("assigned_admin must be an active administrator.")
+        if value is not None and not (value.is_active and value.is_admin_role):
+            raise serializers.ValidationError(
+                "assigned_admin must be an active administrator."
+            )
         return value
-        
+
+
 class GuestMessageSerializer(serializers.Serializer):
-    """Serializer for unauthenticated users sending a message from the footer."""
-    phone_number = serializers.CharField(validators=[validate_e164_phone])
-    first_name = serializers.CharField(max_length=150)
-    last_name = serializers.CharField(max_length=150)
-    body = serializers.CharField()
+    """A contact snapshot; this never creates or mutates an account."""
+
+    phone_number = serializers.CharField(max_length=20)
+    first_name = serializers.CharField(max_length=150, trim_whitespace=True)
+    last_name = serializers.CharField(max_length=150, trim_whitespace=True)
+    body = serializers.CharField(max_length=MAX_MESSAGE_LENGTH, trim_whitespace=True)
+
+    def validate_phone_number(self, value):
+        return normalize_phone_number(value)
+
+    def validate_first_name(self, value):
+        if not value:
+            raise serializers.ValidationError("This field may not be blank.")
+        return value
+
+    def validate_last_name(self, value):
+        if not value:
+            raise serializers.ValidationError("This field may not be blank.")
+        return value
+
+    def validate_body(self, value):
+        if not value:
+            raise serializers.ValidationError("A message body is required.")
+        return value
+
+    @transaction.atomic
+    def create(self, validated_data):
+        thread, _ = MessageThread.objects.select_for_update().get_or_create(
+            participant=None,
+            guest_phone=validated_data["phone_number"],
+            thread_type=MessageThread.ThreadType.USER_ADMIN,
+            status=MessageThread.Status.OPEN,
+            deleted_at=None,
+            defaults={
+                "guest_first_name": validated_data["first_name"],
+                "guest_last_name": validated_data["last_name"],
+            },
+        )
+        changed_fields = []
+        for field, incoming in (
+            ("guest_first_name", validated_data["first_name"]),
+            ("guest_last_name", validated_data["last_name"]),
+        ):
+            if getattr(thread, field) != incoming:
+                setattr(thread, field, incoming)
+                changed_fields.append(field)
+        if changed_fields:
+            thread.save(update_fields=(*changed_fields, "updated_at"))
+
+        message = Message.objects.create(
+            thread=thread,
+            sender=None,
+            sender_type=Message.SenderType.GUEST,
+            sender_first_name=validated_data["first_name"],
+            sender_last_name=validated_data["last_name"],
+            body=validated_data["body"],
+        )
+        MessageThread.objects.filter(pk=thread.pk).update(
+            last_message_at=message.created_at,
+            updated_at=timezone.now(),
+        )
+        return message

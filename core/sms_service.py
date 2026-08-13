@@ -81,6 +81,11 @@ def queue_appt_rejected(mobile, date):
     return _sms_executor.submit(send_appt_rejected, mobile, date)
 
 
+def queue_new_message(mobile, time):
+    """Dispatch message notifications without holding the request worker."""
+    return _sms_executor.submit(send_new_message, mobile, time)
+
+
 def send_otp(mobile, code):
     return send_sms(mobile, 288919, [{"name": "Code", "value": code}])
 

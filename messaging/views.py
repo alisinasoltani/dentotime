@@ -1,30 +1,71 @@
-from django.shortcuts import get_object_or_404
+from datetime import datetime, timezone as datetime_timezone
+
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import (
+    Count,
+    DateTimeField,
+    F,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    TextField,
+    Value,
+)
+from django.db.models.functions import Coalesce
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.pagination import CursorPagination
 from rest_framework.exceptions import PermissionDenied
-
-from accounts.permissions import IsAdminRole
-from accounts.models import User, NormalUser
-from messaging.models import MessageThread, Message, MessageAttachment
-from .permissions import CanCreateOwnThread, IsParticipantOrAdmin
-from .serializers import (
-    ThreadListSerializer, MessageSerializer, MessageCreateSerializer, AdminThreadUpdateSerializer, GuestMessageSerializer
-)
-from rest_framework.generics import RetrieveUpdateDestroyAPIView
-
-from django.utils import timezone
-from core.sms_service import send_new_message
-
+from rest_framework.pagination import CursorPagination
 from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from accounts.models import User
+from accounts.permissions import IsAdminRole
+from core.sms_service import queue_new_message
+from messaging.models import Message, MessageAttachment, MessageThread, ThreadReadState
+from messaging.permissions import CanCreateOwnThread, IsParticipantOrAdmin
+from messaging.serializers import (
+    AdminThreadUpdateSerializer,
+    GuestMessageSerializer,
+    MessageCreateSerializer,
+    MessageSerializer,
+    ThreadListSerializer,
+)
+
 
 class MessageCursorPagination(CursorPagination):
     page_size = 50
-    ordering = "-created_at"
+    ordering = ("-created_at", "-id")
+
+
+def _visible_message_filter(user):
+    query = Q(messages__is_deleted=False)
+    if not user.is_admin_role:
+        query &= Q(messages__visibility=Message.Visibility.PARTICIPANTS)
+    return query
+
+
+def _queue_notifications(*, sender, thread, visibility):
+    if visibility != Message.Visibility.PARTICIPANTS:
+        return
+    time_str = timezone.localtime().strftime("%H:%M")
+    if sender.is_admin_role:
+        phones = [thread.participant.phone_number] if thread.participant_id else []
+    else:
+        phones = list(
+            User.objects.filter(role=User.Role.ADMIN, is_active=True).values_list(
+                "phone_number", flat=True
+            )
+        )
+    def dispatch_notifications():
+        for phone in phones:
+            queue_new_message(phone, time_str)
+
+    transaction.on_commit(dispatch_notifications)
+
 
 class ThreadListView(generics.ListAPIView):
     serializer_class = ThreadListSerializer
@@ -32,25 +73,64 @@ class ThreadListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        qs = MessageThread.objects.select_related("participant", "assigned_admin")
-        
+        queryset = MessageThread.objects.filter(deleted_at__isnull=True).select_related(
+            "participant", "assigned_admin"
+        )
         if user.is_admin_role:
-            qs = qs.all()
+            search = self.request.query_params.get("search", "").strip()
+            if search:
+                queryset = queryset.filter(
+                    Q(participant__first_name__icontains=search)
+                    | Q(participant__last_name__icontains=search)
+                    | Q(participant__phone_number__icontains=search)
+                    | Q(guest_first_name__icontains=search)
+                    | Q(guest_last_name__icontains=search)
+                    | Q(guest_phone__icontains=search)
+                )
         else:
-            qs = qs.filter(participant=user)
-            
-        # Annotate unread count: messages not sent by this user and not read
-        return qs.annotate(
+            queryset = queryset.filter(participant=user)
+
+        read_at = ThreadReadState.objects.filter(
+            thread_id=OuterRef("pk"), user=user
+        ).values("last_read_at")[:1]
+        visible_messages = Message.objects.filter(
+            thread_id=OuterRef("pk"), is_deleted=False
+        )
+        if not user.is_admin_role:
+            visible_messages = visible_messages.filter(
+                visibility=Message.Visibility.PARTICIPANTS
+            )
+        last_message = visible_messages.order_by("-created_at", "-id").values("body")[:1]
+
+        epoch = datetime(1970, 1, 1, tzinfo=datetime_timezone.utc)
+        queryset = queryset.annotate(
+            _read_cursor_at=Coalesce(
+                Subquery(read_at, output_field=DateTimeField()),
+                Value(epoch, output_field=DateTimeField()),
+            ),
+            _last_message=Coalesce(
+                Subquery(last_message, output_field=TextField()),
+                Value(""),
+                output_field=TextField(),
+            ),
+        )
+        visible_filter = _visible_message_filter(user)
+        return queryset.annotate(
             unread_count=Count(
                 "messages",
-                filter=Q(messages__read_by_recipient=False) & ~Q(messages__sender=user)
+                filter=(
+                    visible_filter
+                    & Q(messages__created_at__gt=F("_read_cursor_at"))
+                    & ~Q(messages__sender=user)
+                ),
             )
-        ).order_by("-last_message_at")
+        ).order_by("-last_message_at", "-created_at", "-id")
+
 
 class ThreadGetOrCreateView(APIView):
-    """Get or create a thread for the current user/doctor."""
     permission_classes = (CanCreateOwnThread,)
 
+    @transaction.atomic
     def post(self, request):
         user = request.user
         thread_type = (
@@ -58,174 +138,161 @@ class ThreadGetOrCreateView(APIView):
             if user.is_doctor_role
             else MessageThread.ThreadType.USER_ADMIN
         )
-        
-        # Check if doctor is allowed to chat
-        if user.is_doctor_role:
-            doctor_profile = user.doctor_profile
-            if not doctor_profile.chat_enabled:
-                raise PermissionDenied("Your chat privileges are disabled. Wait for admin approval.")
+        if user.is_doctor_role and not user.doctor_profile.chat_enabled:
+            raise PermissionDenied(
+                "Your chat privileges are disabled. Wait for admin approval."
+            )
 
         thread, created = MessageThread.objects.get_or_create(
             participant=user,
             thread_type=thread_type,
             status=MessageThread.Status.OPEN,
+            deleted_at=None,
         )
-        
-        return Response(ThreadListSerializer(thread).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        thread.unread_count = 0
+        thread._last_message = ""
+        return Response(
+            ThreadListSerializer(thread).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
 
 class MessageListCreateView(generics.ListCreateAPIView):
     pagination_class = MessageCursorPagination
     permission_classes = (IsParticipantOrAdmin,)
 
-    def get_thread(self):
-        queryset = MessageThread.objects.select_related("participant")
+    def get_thread(self, *, for_update=False):
+        cached = getattr(self, "_message_thread", None)
+        if cached is not None and not for_update:
+            return cached
+        queryset = MessageThread.objects.filter(deleted_at__isnull=True).select_related(
+            "participant"
+        )
+        if for_update:
+            queryset = queryset.select_for_update(of=("self",))
         if not self.request.user.is_admin_role:
             queryset = queryset.filter(participant_id=self.request.user.id)
-        return get_object_or_404(queryset, pk=self.kwargs["pk"])
+        thread = get_object_or_404(queryset, pk=self.kwargs["pk"])
+        self._message_thread = thread
+        return thread
 
     def get_serializer_class(self):
-        if self.request.method == "POST":
-            return MessageCreateSerializer
-        return MessageSerializer
+        return MessageCreateSerializer if self.request.method == "POST" else MessageSerializer
 
     def get_queryset(self):
         thread = self.get_thread()
+        queryset = Message.objects.filter(thread=thread, is_deleted=False)
+        if not self.request.user.is_admin_role:
+            queryset = queryset.filter(visibility=Message.Visibility.PARTICIPANTS)
         return (
-            Message.objects.filter(thread=thread)
-            .select_related("sender")
+            queryset.select_related("sender")
             .prefetch_related(
                 Prefetch(
                     "attachments",
-                    queryset=MessageAttachment.objects.select_related("asset"),
+                    queryset=MessageAttachment.objects.filter(is_deleted=False).select_related(
+                        "asset"
+                    ),
                 )
             )
-            .order_by("created_at")
+            .order_by("-created_at", "-id")
         )
 
     @transaction.atomic
     def perform_create(self, serializer):
-        thread = self.get_thread()
-        
-        
+        thread = self.get_thread(for_update=True)
         sender = self.request.user
-        time_str = timezone.now().strftime("%H:%M")
-        
-        if sender.is_admin_role:
-            send_new_message(thread.participant.phone_number, time_str)
-        else:
-            admin_phones = User.objects.filter(role="ADMIN", is_active=True).values_list('phone_number', flat=True)
-            for phone in admin_phones:
-                send_new_message(phone, time_str)
-            
-        if self.request.user.is_doctor_role:
-            doctor_profile = self.request.user.doctor_profile
-            if not doctor_profile.chat_enabled:
-                raise PermissionDenied("Your chat privileges are disabled. Wait for admin approval.")
-
-        sender_type = Message.SenderType.ADMIN if self.request.user.is_admin_role else (
-            Message.SenderType.DOCTOR if self.request.user.is_doctor_role else Message.SenderType.USER
+        if sender.is_doctor_role and not sender.doctor_profile.chat_enabled:
+            raise PermissionDenied(
+                "Your chat privileges are disabled. Wait for admin approval."
+            )
+        sender_type = (
+            Message.SenderType.ADMIN
+            if sender.is_admin_role
+            else Message.SenderType.DOCTOR
+            if sender.is_doctor_role
+            else Message.SenderType.USER
         )
-
-        # Pass thread/sender to serializer's create method. 
-        # Attachments are handled automatically by the serializer now!
-        serializer.save(
+        message = serializer.save(thread=thread, sender=sender, sender_type=sender_type)
+        _queue_notifications(
+            sender=sender,
             thread=thread,
-            sender=self.request.user,
-            sender_type=sender_type
+            visibility=message.visibility,
         )
+
     def create(self, request, *args, **kwargs):
-        """Override create to return the full MessageSerializer in the response."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
-        
-        # Re-fetch the message with attachments to serialize for the response
         message = (
             Message.objects.select_related("sender")
             .prefetch_related(
                 Prefetch(
                     "attachments",
-                    queryset=MessageAttachment.objects.select_related("asset"),
+                    queryset=MessageAttachment.objects.filter(is_deleted=False).select_related(
+                        "asset"
+                    ),
                 )
             )
             .get(pk=serializer.instance.pk)
         )
-        response_serializer = MessageSerializer(message, context=self.get_serializer_context())
-        
-        headers = self.get_success_headers(response_serializer.data)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        response_serializer = MessageSerializer(
+            message, context=self.get_serializer_context()
+        )
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
 
 class ThreadMarkReadView(APIView):
     permission_classes = (IsParticipantOrAdmin,)
 
+    @transaction.atomic
     def patch(self, request, pk):
-        queryset = MessageThread.objects.all()
+        queryset = MessageThread.objects.filter(deleted_at__isnull=True).select_for_update()
         if not request.user.is_admin_role:
             queryset = queryset.filter(participant_id=request.user.id)
         thread = get_object_or_404(queryset, pk=pk)
-            
-        Message.objects.filter(thread=thread, read_by_recipient=False).exclude(sender=request.user).update(
-            read_by_recipient=True, read_at=timezone.now()
+        now = timezone.now()
+        ThreadReadState.objects.update_or_create(
+            thread=thread,
+            user=request.user,
+            defaults={"last_read_at": now},
         )
-        return Response({"detail": "Marked as read."})
+        return Response({"last_read_at": now})
 
-class AdminThreadUpdateView(RetrieveUpdateDestroyAPIView):
-    """Admin view to update or delete a thread."""
-    queryset = MessageThread.objects.all()
+
+class AdminThreadUpdateView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = MessageThread.objects.select_related("participant", "assigned_admin")
     serializer_class = AdminThreadUpdateSerializer
     permission_classes = (IsAdminRole,)
 
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        thread = MessageThread.objects.select_for_update().get(pk=instance.pk)
+        if thread.deleted_at is None:
+            thread.deleted_at = timezone.now()
+            thread.deleted_by = self.request.user
+            thread.status = MessageThread.Status.ARCHIVED
+            thread.save(
+                update_fields=("deleted_at", "deleted_by", "status", "updated_at")
+            )
+
+
 class GuestMessageView(APIView):
-    """Allows unauthenticated users to send a message to admins."""
-    permission_classes = [AllowAny]
-    authentication_classes = []
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
 
     def post(self, request):
         serializer = GuestMessageSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            
-        data = serializer.validated_data
-        phone = data["phone_number"]
-        first_name = data["first_name"]
-        last_name = data["last_name"]
-        body = data["body"]
-
-        # ۱. پیدا کردن کاربر یا ساخت کاربر جدید
-        user, created = NormalUser.objects.get_or_create(
-            phone_number=phone,
-            defaults={
-                "first_name": first_name,
-                "last_name": last_name,
-                "role": "USER",
-            }
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        phones = list(
+            User.objects.filter(role=User.Role.ADMIN, is_active=True).values_list(
+                "phone_number", flat=True
+            )
         )
-
-        # اگر کاربر قبلاً وجود داشت اما اسمش عوض شده، آپدیتش می‌کنیم
-        if not created:
-            user.first_name = first_name
-            user.last_name = last_name
-            user.save(update_fields=["first_name", "last_name"])
-
-        # ۲. پیدا کردن یا ایجاد ترد چت
-        thread, thread_created = MessageThread.objects.get_or_create(
-            participant=user,
-            thread_type=MessageThread.ThreadType.USER_ADMIN,
-            status=MessageThread.Status.OPEN
+        time_str = timezone.localtime().strftime("%H:%M")
+        for phone in phones:
+            queue_new_message(phone, time_str)
+        return Response(
+            {"detail": "پیام شما با موفقیت ارسال شد."},
+            status=status.HTTP_201_CREATED,
         )
-
-        # ۳. ذخیره پیام
-        Message.objects.create(
-            thread=thread,
-            sender=user,
-            sender_type=Message.SenderType.USER,
-            body=body
-        )
-
-        # ۴. ارسال پیامک به ادمین‌ها
-        time_str = timezone.now().strftime("%H:%M")
-        admin_phones = User.objects.filter(role="ADMIN", is_active=True).values_list('phone_number', flat=True)
-        for admin_phone in admin_phones:
-            send_new_message(admin_phone, time_str)
-
-        return Response({"detail": "پیام شما با موفقیت ارسال شد."}, status=status.HTTP_201_CREATED)

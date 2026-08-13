@@ -78,7 +78,7 @@ def test_arbitrary_attachment_metadata_is_rejected(doctor_client, doctor_user):
 def test_chat_binding_requires_owner_purpose_scope_and_safe_state(
     doctor_client, doctor_user, admin_user, monkeypatch
 ):
-    monkeypatch.setattr("messaging.views.send_new_message", lambda *args, **kwargs: None)
+    monkeypatch.setattr("messaging.views.queue_new_message", lambda *args, **kwargs: None)
     doctor_user.verification_status = doctor_user.VerificationStatus.APPROVED
     doctor_user.save(update_fields=("verification_status",))
     thread = MessageThread.objects.create(
@@ -144,7 +144,7 @@ def test_chat_binding_requires_owner_purpose_scope_and_safe_state(
 def test_completed_asset_binds_once_without_exposing_storage_key(
     doctor_client, doctor_user, monkeypatch
 ):
-    monkeypatch.setattr("messaging.views.send_new_message", lambda *args, **kwargs: None)
+    monkeypatch.setattr("messaging.views.queue_new_message", lambda *args, **kwargs: None)
     doctor_user.verification_status = doctor_user.VerificationStatus.APPROVED
     doctor_user.save(update_fields=("verification_status",))
     thread = MessageThread.objects.create(
