@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import axios from 'axios';
+import type { AxiosResponse } from 'axios';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -11,8 +13,10 @@ import {
   differenceInCalendarMonths
 } from 'date-fns-jalali';
 import { format as gFormat } from 'date-fns';
-import { ChevronRight, ChevronLeft, AlertCircle } from 'lucide-react';
+import { ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
 import api from '@/lib/api';
+import { restoreSession } from '@/lib/auth';
+import { showBookingSuccess } from '@/components/booking-success-toast';
 
 const bookingSchema = z.object({
   service: z.string().min(1, "لطفا یک سرویس را انتخاب کنید"),
@@ -21,6 +25,7 @@ const bookingSchema = z.object({
   phone_number: z.string().regex(/^09\d{9}$/, "شماره موبایل معتبر نیست (مثال: 09123456789)"),
   date: z.string().min(1, "لطفا یک روز را از تقویم انتخاب کنید"),
   time: z.string().min(1, "ساعت مراجعه را انتخاب کنید"),
+  captcha_answer: z.string().optional(),
 });
 
 type BookingFormValues = z.infer<typeof bookingSchema>;
@@ -35,16 +40,38 @@ const SERVICES = [
 
 const WEEK_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'];
 
+interface AppointmentSlot {
+  id: number;
+  date?: string;
+  start_at: string;
+  end_at: string;
+}
+
+interface PaginatedSlots {
+  results: AppointmentSlot[];
+  next: string | null;
+}
+
+interface CaptchaChallenge {
+  challenge_id: string;
+  image_data_url: string;
+  expires_in: number;
+}
+
 export default function BookingSection() {
   const today = startOfDay(new Date());
   const [currentMonth, setCurrentMonth] = useState(today);
   const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(null);
 
-  const [availableSlots, setAvailableSlots] = useState<any[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<AppointmentSlot[]>([]);
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
   const idempotencyKeyRef = useRef<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authResolved, setAuthResolved] = useState(false);
+  const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null);
+  const [isLoadingCaptcha, setIsLoadingCaptcha] = useState(false);
 
   const { register, handleSubmit, setValue, watch, formState: { errors }, reset } = useForm<BookingFormValues>({
     resolver: zodResolver(bookingSchema),
@@ -53,6 +80,52 @@ export default function BookingSection() {
 
   const watchDate = watch("date");
 
+  const loadCaptcha = useCallback(async () => {
+    setIsLoadingCaptcha(true);
+    try {
+      const response = await api.post<CaptchaChallenge>('/appointments/captcha/', {});
+      setCaptcha(response.data);
+      setValue('captcha_answer', '');
+    } catch {
+      setCaptcha(null);
+      toast.error('دریافت تصویر امنیتی ناموفق بود.');
+    } finally {
+      setIsLoadingCaptcha(false);
+    }
+  }, [setValue]);
+
+  useEffect(() => {
+    let active = true;
+    const resolveAuthentication = async () => {
+      const hasSession = await restoreSession();
+      if (!active) return;
+      setIsAuthenticated(hasSession);
+      if (hasSession) {
+        try {
+          const response = await api.get<{
+            first_name?: string;
+            last_name?: string;
+            phone_number?: string;
+          }>('/users/me/');
+          if (!active) return;
+          const phone = response.data.phone_number?.replace(/^\+98/, '0') ?? '';
+          setValue('first_name', response.data.first_name ?? '');
+          setValue('last_name', response.data.last_name ?? '');
+          setValue('phone_number', phone);
+        } catch {
+          if (!active) return;
+          setIsAuthenticated(false);
+          await loadCaptcha();
+        }
+      } else {
+        await loadCaptcha();
+      }
+      if (active) setAuthResolved(true);
+    };
+    void resolveAuthentication();
+    return () => { active = false; };
+  }, [loadCaptcha, setValue]);
+
   useEffect(() => {
     const fetchSlots = async () => {
       setIsLoadingSlots(true);
@@ -60,13 +133,13 @@ export default function BookingSection() {
         const start = gFormat(startOfMonth(currentMonth), 'yyyy-MM-dd');
         const end = gFormat(endOfMonth(currentMonth), 'yyyy-MM-dd');
 
-        let allSlots: any[] = [];
+        let allSlots: AppointmentSlot[] = [];
         let url: string | null = `/appointments/slots/?start_date=${start}&end_date=${end}&_t=${Date.now()}`;
 
         // دریافت تمام صفحات (Pagination)
         while (url) {
-          const res: any = await api.get(url);
-          const data = res.data;
+          const res: AxiosResponse<AppointmentSlot[] | PaginatedSlots> = await api.get<AppointmentSlot[] | PaginatedSlots>(url);
+          const data: AppointmentSlot[] | PaginatedSlots = res.data;
 
           if (Array.isArray(data)) {
             allSlots = allSlots.concat(data);
@@ -75,7 +148,7 @@ export default function BookingSection() {
             allSlots = allSlots.concat(data.results);
             if (data.next) {
               try {
-                const nextUrl = new URL(data.next);
+              const nextUrl: URL = new URL(data.next);
                 url = (nextUrl.pathname + nextUrl.search).replace('/api/v1', '');
               } catch {
                 url = null;
@@ -97,7 +170,7 @@ export default function BookingSection() {
   }, [currentMonth]);
 
   const slotsByDate = useMemo(() => {
-    const map: Record<string, any[]> = {};
+    const map: Record<string, AppointmentSlot[]> = {};
     availableSlots.forEach(slot => {
       const dateKey = slot.date || slot.start_at.slice(0, 10);
       if (!map[dateKey]) map[dateKey] = [];
@@ -117,6 +190,10 @@ export default function BookingSection() {
       toast.error("لطفا یک ساعت معتبر را انتخاب کنید.");
       return;
     }
+    if (!isAuthenticated && (!captcha || !data.captcha_answer?.trim())) {
+      toast.error('لطفا کد تصویر امنیتی را وارد کنید.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -126,37 +203,49 @@ export default function BookingSection() {
         formattedPhone = "+98" + formattedPhone.substring(1);
       }
 
-      // ارسال به مسیر مهمان (guest)
       idempotencyKeyRef.current ??= crypto.randomUUID();
       await api.post(
-        '/appointments/guest/',
+        '/appointments/',
         {
           slot_id: selectedSlotId,
-          phone_number: formattedPhone,
-          first_name: data.first_name,
-          last_name: data.last_name,
           reason: data.service,
+          ...(!isAuthenticated && captcha ? {
+            phone_number: formattedPhone,
+            first_name: data.first_name,
+            last_name: data.last_name,
+            captcha_challenge_id: captcha.challenge_id,
+            captcha_answer: data.captcha_answer,
+          } : {}),
         },
         { headers: { 'Idempotency-Key': idempotencyKeyRef.current } },
       );
 
-      // پیام موفقیت آمیز بودن
-      toast.success("رزرو نوبت موفقیت آمیز بود. برای پیگیری درخواست خود لطفا با همین شماره همراه وارد حساب کاربری خود شده، یا اگر حساب کاربری ندارید، با همین شماره همراه حساب خود را بسازید.", {
-        duration: 8000, // نمایش طولانی‌تر برای خواندن پیام
-      });
+      showBookingSuccess(isAuthenticated);
 
       // حذف اسلات رزرو شده از لیست
       setAvailableSlots(prev => prev.filter(s => s.id !== selectedSlotId));
 
       // ریست کردن فرم
-      reset({ service: SERVICES[0], first_name: "", last_name: "", phone_number: "", time: "", date: "" });
+      reset({
+        service: SERVICES[0],
+        first_name: isAuthenticated ? data.first_name : "",
+        last_name: isAuthenticated ? data.last_name : "",
+        phone_number: isAuthenticated ? data.phone_number : "",
+        time: "",
+        date: "",
+        captcha_answer: "",
+      });
       setSelectedDateObj(null);
       setSelectedSlotId(null);
       idempotencyKeyRef.current = null;
 
-    } catch (err: any) {
-      const errMsg = err.response?.data?.detail || "خطا در ثبت نوبت. لطفا دوباره تلاش کنید.";
+    } catch (err: unknown) {
+      const responseData = axios.isAxiosError(err)
+        ? err.response?.data as { detail?: string; captcha_answer?: string }
+        : undefined;
+      const errMsg = responseData?.detail || responseData?.captcha_answer || "خطا در ثبت نوبت. لطفا دوباره تلاش کنید.";
       toast.error(errMsg);
+      if (!isAuthenticated) await loadCaptcha();
     } finally {
       setIsSubmitting(false);
     }
@@ -209,7 +298,7 @@ export default function BookingSection() {
         {/* ================= تقویم ================= */}
         <div className="w-full lg:w-[45%] bg-white rounded-[32px] p-6 shadow-[0_8px_40px_-12px_rgba(0,0,0,0.08)] border border-slate-100">
           <div className="flex justify-between items-center mb-8 px-2">
-            <button onClick={nextMonth} disabled={!canGoNext} type="button" className="p-2 rounded-full hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+            <button data-testid="booking-next-month" onClick={nextMonth} disabled={!canGoNext} type="button" className="p-2 rounded-full hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
               <ChevronRight className="w-6 h-6 text-slate-700" />
             </button>
             <h3 className="text-xl font-bold text-slate-900">
@@ -254,6 +343,7 @@ export default function BookingSection() {
                 <div key={dateStr} className="relative group flex justify-center">
                   <button
                     type="button"
+                    data-testid={`booking-date-${dateStr}`}
                     onClick={() => handleDateClick(date, isSelectable)}
                     disabled={!isSelectable}
                     className={`h-10 w-10 md:h-12 md:w-12 rounded-xl flex items-center justify-center text-sm md:text-base transition-all duration-200 ${buttonStyle}`}
@@ -342,6 +432,7 @@ export default function BookingSection() {
                 <label className="text-sm font-bold text-slate-700">ساعت مراجعه:</label>
                 <div className="relative">
                   <select
+                    aria-label="ساعت مراجعه"
                     value={selectedSlotId || ""}
                     onChange={handleTimeChange}
                     disabled={!watchDate || isLoadingSlots || availableHoursForSelectedDate.length === 0}
@@ -364,9 +455,32 @@ export default function BookingSection() {
               {!errors.date && errors.time && <p className="text-xs text-red-500 font-medium flex items-center gap-1.5"><AlertCircle size={14} /> {errors.time.message}</p>}
             </div>
 
+            {!isAuthenticated && authResolved && (
+              <div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <label htmlFor="homepage-booking-captcha" className="text-sm font-bold text-slate-700">کد تصویر امنیتی:</label>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="flex h-[90px] min-w-[260px] items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-white">
+                    {isLoadingCaptcha ? (
+                      <Loader2 className="size-5 animate-spin text-slate-400" aria-label="در حال دریافت تصویر امنیتی" />
+                    ) : captcha ? (
+                      <img src={captcha.image_data_url} alt="تصویر کد امنیتی؛ پنج نویسه را در کادر وارد کنید" width={260} height={90} />
+                    ) : (
+                      <span className="text-xs text-red-500">تصویر در دسترس نیست</span>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => void loadCaptcha()} disabled={isLoadingCaptcha} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600 hover:border-[#2993A3] disabled:opacity-50" aria-label="دریافت تصویر امنیتی جدید">
+                    <RefreshCw className="size-4" /> تصویر جدید
+                  </button>
+                </div>
+                <input id="homepage-booking-captcha" {...register('captcha_answer')} autoComplete="off" inputMode="text" maxLength={5} dir="ltr" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-left uppercase tracking-[0.35em] outline-none focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3]" />
+                <p className="text-xs text-slate-500">این تصویر در سرور همین سامانه تولید می‌شود و به سرویس دیگری ارسال نمی‌شود.</p>
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={isSubmitting}
+              data-testid="submit-booking"
+              disabled={isSubmitting || !authResolved || (!isAuthenticated && !captcha)}
               className="w-full lg:w-auto min-w-[200px] rounded-full bg-gradient-to-r from-[#2993A3] to-[#75C1C7] px-8 py-4 text-base font-bold text-white shadow-[0_4px_14px_0_rgba(41,147,163,0.39)] transition-all hover:shadow-[0_6px_20px_rgba(41,147,163,0.23)] hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:scale-100 mt-2 float-left"
             >
               {isSubmitting ? 'در حال ثبت...' : 'ثبت نوبت'}

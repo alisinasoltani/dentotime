@@ -9,6 +9,19 @@ import Link from 'next/link';
 import api from '@/lib/api';
 import { getCurrentUser, restoreSession, setAccessToken } from '@/lib/auth';
 
+function patientDestination(): string {
+  if (typeof window === 'undefined') return '/user/';
+  const returnTo = new URLSearchParams(window.location.search).get('returnTo');
+  if (!returnTo?.startsWith('/')) return '/user/';
+  try {
+    const destination = new URL(returnTo, window.location.origin);
+    if (destination.origin !== window.location.origin) return '/user/';
+    return `${destination.pathname}${destination.search}${destination.hash}`;
+  } catch {
+    return '/user/';
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
 
@@ -34,7 +47,7 @@ export default function LoginPage() {
       } else if (user.role === 'ADMIN') {
         router.push("/admin/");
       } else {
-        router.push("/user/");
+        router.push(patientDestination());
       }
     };
     void redirectExistingSession();
@@ -78,7 +91,7 @@ export default function LoginPage() {
         if (userType === 'DOCTOR') {
           router.push("/doctor/");
         } else {
-          router.push("/user/");
+          router.push(patientDestination());
         }
       }, 1500);
 

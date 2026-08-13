@@ -13,6 +13,13 @@ if (isProduction && backendUrl.protocol !== "https:") {
 const publicApiOrigin = process.env.NEXT_PUBLIC_API_URL
   ? new URL(process.env.NEXT_PUBLIC_API_URL).origin
   : null;
+if (
+  isProduction &&
+  publicApiOrigin &&
+  new URL(publicApiOrigin).protocol !== "https:"
+) {
+  throw new Error("NEXT_PUBLIC_API_URL must use HTTPS in production.");
+}
 const connectSources = ["'self'", ...(publicApiOrigin ? [publicApiOrigin] : [])];
 
 const contentSecurityPolicy = [

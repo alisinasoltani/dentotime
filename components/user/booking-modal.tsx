@@ -16,6 +16,7 @@ import { format as gFormat } from "date-fns";
 import { ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import api from "@/lib/api";
 import { restoreSession } from "@/lib/auth";
+import { showBookingSuccess } from "@/components/booking-success-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const bookingSchema = z.object({
@@ -233,7 +234,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                 { headers: { 'Idempotency-Key': idempotencyKeyRef.current } },
             );
 
-            toast.success("نوبت شما با موفقیت ثبت شد! منتظر تایید ادمین باشید.");
+            showBookingSuccess(isAuthenticated);
 
             reset({ fullName: data.fullName, phone: data.phone, service: SERVICES[0], date: "", time: "", captchaAnswer: "" });
             setSelectedDateObj(null);
