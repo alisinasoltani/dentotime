@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   ChatThread,
   MessageCursorPage,
+  MessageDeltaPage,
   PaginatedResponse,
 } from "./types";
 
@@ -29,6 +30,18 @@ export const getMessages = async (
 ): Promise<MessageCursorPage> => {
   const response = await api.get(
     pageUrl || `/chat/threads/${threadId}/messages/`,
+  );
+  return response.data;
+};
+
+export const getMessageDeltas = async (
+  threadId: string,
+  after: string,
+  signal?: AbortSignal,
+): Promise<MessageDeltaPage> => {
+  const response = await api.get(
+    `/chat/threads/${threadId}/messages/delta/`,
+    { params: { after }, signal },
   );
   return response.data;
 };

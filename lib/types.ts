@@ -191,6 +191,12 @@ export interface MessageCursorPage {
   results: ChatMessage[];
 }
 
+export interface MessageDeltaPage {
+  cursor: string;
+  has_more: boolean;
+  results: ChatMessage[];
+}
+
 // -----------------------------------------------------------------------------
 // File Upload (Section 7)
 // -----------------------------------------------------------------------------

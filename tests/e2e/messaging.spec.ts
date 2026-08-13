@@ -23,6 +23,28 @@ async function mockSession(page: Page, role: "USER" | "ADMIN") {
   );
 }
 
+async function mockRealtime(route: Route): Promise<boolean> {
+  const url = new URL(route.request().url());
+  if (url.pathname.endsWith("/events/")) {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      headers: { "Cache-Control": "no-cache" },
+      body: "retry: 1000\n\n",
+    });
+    return true;
+  }
+  if (url.pathname.endsWith("/messages/delta/")) {
+    await json(route, {
+      cursor: url.searchParams.get("after"),
+      has_more: false,
+      results: [],
+    });
+    return true;
+  }
+  return false;
+}
+
 const patientThread = {
   id: "thread-patient",
   thread_type: "USER_ADMIN",
@@ -78,6 +100,7 @@ test("a patient loads older messages, sends normally, and has no file or delete 
   });
   let submittedBody = "";
   await page.route("**/api/v1/chat/threads/**", async (route) => {
+    if (await mockRealtime(route)) return;
     const url = new URL(route.request().url());
     const method = route.request().method();
     if (url.pathname.endsWith("/read/")) return json(route, { last_read_at: "2026-08-13T10:03:00Z" });
@@ -140,6 +163,7 @@ test("an administrator paginates the inbox and creates a visibly separate intern
     unread_count: 0,
   };
   await page.route("**/api/v1/chat/threads/**", async (route) => {
+    if (await mockRealtime(route)) return;
     const url = new URL(route.request().url());
     const method = route.request().method();
     if (url.pathname.endsWith("/read/")) return json(route, { last_read_at: "2026-08-13T10:03:00Z" });
@@ -194,6 +218,7 @@ test("the patient chat switches cleanly from inbox to conversation on mobile", a
   await page.setViewportSize({ width: 390, height: 844 });
   await mockSession(page, "USER");
   await page.route("**/api/v1/chat/threads/**", async (route) => {
+    if (await mockRealtime(route)) return;
     const url = new URL(route.request().url());
     if (url.pathname.endsWith("/read/")) return json(route, { last_read_at: "2026-08-13T10:03:00Z" });
     if (url.pathname.endsWith("/messages/")) {
