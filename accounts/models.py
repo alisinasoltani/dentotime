@@ -216,6 +216,7 @@ class OTPChallenge(models.Model):
     class Purpose(models.TextChoices):
         SIGNUP = "SIGNUP", "Signup"
         PASSWORD_RESET = "PASSWORD_RESET", "Password reset"
+        APPOINTMENT_CLAIM = "APPOINTMENT_CLAIM", "Appointment claim"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     phone_number = models.CharField(max_length=20, validators=[validate_e164_phone])

@@ -74,27 +74,67 @@ def parse_idempotency_key(raw_key: str | None) -> uuid.UUID:
         raise IdempotencyConflict("Idempotency-Key must be a valid UUID.") from exc
 
 
-def _matching_idempotent_booking(existing, *, patient, slot_id, reason):
-    if existing.patient_id != patient.pk or existing.slot_id != slot_id or existing.reason != reason:
+def _matching_idempotent_booking(
+    existing,
+    *,
+    patient,
+    slot_id,
+    reason,
+    contact_phone_number,
+    contact_first_name,
+    contact_last_name,
+):
+    if (
+        existing.patient_id != getattr(patient, "pk", None)
+        or existing.slot_id != slot_id
+        or existing.reason != reason
+        or existing.contact_phone_number != contact_phone_number
+        or existing.contact_first_name != contact_first_name
+        or existing.contact_last_name != contact_last_name
+    ):
         raise IdempotencyConflict("This idempotency key was already used for another booking.")
     return BookingResult(existing, created=False)
 
 
-def _queue_booking_notifications(admin_phones):
+def _queue_booking_notifications(admin_phones, contact_phone_number):
     for phone in admin_phones:
         try:
-            queue_admin_alert(phone, "نوبت جدید")
+            queue_admin_alert(phone, f"نوبت جدید: {contact_phone_number}")
         except Exception:
             logger.exception("Unable to enqueue an appointment administrator notification.")
 
 
-def book_appointment(*, patient, slot_id: int, reason: str, idempotency_key) -> BookingResult:
+def book_appointment(
+    *,
+    patient,
+    slot_id: int,
+    reason: str,
+    idempotency_key,
+    contact_phone_number: str | None = None,
+    contact_first_name: str | None = None,
+    contact_last_name: str | None = None,
+) -> BookingResult:
+    if patient is not None:
+        contact_phone_number = patient.phone_number
+        contact_first_name = patient.first_name
+        contact_last_name = patient.last_name
+    if not contact_phone_number:
+        raise ValueError("A booking contact phone number is required.")
+    contact_first_name = contact_first_name or ""
+    contact_last_name = contact_last_name or ""
+
     existing = Appointment.objects.select_related("slot").filter(
         idempotency_key=idempotency_key
     ).first()
     if existing:
         return _matching_idempotent_booking(
-            existing, patient=patient, slot_id=slot_id, reason=reason
+            existing,
+            patient=patient,
+            slot_id=slot_id,
+            reason=reason,
+            contact_phone_number=contact_phone_number,
+            contact_first_name=contact_first_name,
+            contact_last_name=contact_last_name,
         )
 
     try:
@@ -105,7 +145,13 @@ def book_appointment(*, patient, slot_id: int, reason: str, idempotency_key) -> 
             ).first()
             if existing:
                 return _matching_idempotent_booking(
-                    existing, patient=patient, slot_id=slot_id, reason=reason
+                    existing,
+                    patient=patient,
+                    slot_id=slot_id,
+                    reason=reason,
+                    contact_phone_number=contact_phone_number,
+                    contact_first_name=contact_first_name,
+                    contact_last_name=contact_last_name,
                 )
             if slot.status != AppointmentSlot.Status.AVAILABLE:
                 raise SlotUnavailable("This slot is no longer available.")
@@ -116,6 +162,9 @@ def book_appointment(*, patient, slot_id: int, reason: str, idempotency_key) -> 
                 status=Appointment.Status.PENDING,
                 reason=reason,
                 idempotency_key=idempotency_key,
+                contact_phone_number=contact_phone_number,
+                contact_first_name=contact_first_name,
+                contact_last_name=contact_last_name,
             )
             slot.status = AppointmentSlot.Status.BOOKED
             slot.save(update_fields=["status"])
@@ -124,7 +173,9 @@ def book_appointment(*, patient, slot_id: int, reason: str, idempotency_key) -> 
                     "phone_number", flat=True
                 )
             )
-            transaction.on_commit(lambda: _queue_booking_notifications(admin_phones))
+            transaction.on_commit(
+                lambda: _queue_booking_notifications(admin_phones, contact_phone_number)
+            )
             return BookingResult(appointment, created=True)
     except IntegrityError:
         existing = Appointment.objects.select_related("slot").filter(
@@ -132,7 +183,13 @@ def book_appointment(*, patient, slot_id: int, reason: str, idempotency_key) -> 
         ).first()
         if existing:
             return _matching_idempotent_booking(
-                existing, patient=patient, slot_id=slot_id, reason=reason
+                existing,
+                patient=patient,
+                slot_id=slot_id,
+                reason=reason,
+                contact_phone_number=contact_phone_number,
+                contact_first_name=contact_first_name,
+                contact_last_name=contact_last_name,
             )
         raise SlotUnavailable("This slot is no longer available.")
 
@@ -142,8 +199,10 @@ def _lock_appointment(appointment_id):
     if slot_id is None:
         raise Appointment.DoesNotExist
     AppointmentSlot.objects.select_for_update().get(pk=slot_id)
-    return Appointment.objects.select_for_update().select_related("patient", "slot").get(
-        pk=appointment_id
+    return (
+        Appointment.objects.select_for_update(of=("self",))
+        .select_related("patient", "slot")
+        .get(pk=appointment_id)
     )
 
 
@@ -162,13 +221,13 @@ def _queue_transition_notification(appointment, target_status):
     try:
         if target_status == Appointment.Status.APPROVED:
             queue_appt_approved(
-                appointment.patient.phone_number,
+                appointment.contact_phone_number,
                 appointment.slot.date.strftime("%Y-%m-%d"),
                 appointment.slot.start_at.strftime("%H:%M"),
             )
         elif target_status == Appointment.Status.REJECTED:
             queue_appt_rejected(
-                appointment.patient.phone_number,
+                appointment.contact_phone_number,
                 appointment.slot.date.strftime("%Y-%m-%d"),
             )
     except Exception:
@@ -234,3 +293,20 @@ def cancel_patient_appointment(*, appointment_id, patient, reason=""):
         actor=patient,
         cancellation_reason=reason,
     )
+
+
+@transaction.atomic
+def claim_guest_appointments(*, patient) -> tuple[int, int]:
+    guest_ids = list(
+        Appointment.objects.select_for_update()
+        .filter(patient__isnull=True, contact_phone_number=patient.phone_number)
+        .values_list("pk", flat=True)
+    )
+    if guest_ids:
+        Appointment.objects.filter(pk__in=guest_ids, patient__isnull=True).update(
+            patient=patient
+        )
+    total = Appointment.objects.filter(
+        patient=patient, contact_phone_number=patient.phone_number
+    ).count()
+    return len(guest_ids), total

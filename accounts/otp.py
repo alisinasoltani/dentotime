@@ -32,8 +32,11 @@ def _private_digest(value: str) -> str:
 
 
 def request_identity(request) -> tuple[str | None, str]:
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",", 1)[0].strip()
-    ip_address = forwarded or request.META.get("REMOTE_ADDR") or None
+    remote_address = request.META.get("REMOTE_ADDR") or None
+    forwarded = ""
+    if remote_address in settings.TRUSTED_PROXY_IPS:
+        forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",", 1)[0].strip()
+    ip_address = forwarded or remote_address
     supplied_device = request.headers.get("X-Device-ID", "").strip()[:200]
     fallback = f"{ip_address or 'unknown'}:{request.META.get('HTTP_USER_AGENT', '')[:300]}"
     return ip_address, _private_digest(supplied_device or fallback)
@@ -139,7 +142,13 @@ def verify_challenge(*, challenge_id, raw_phone: str, purpose: str, code: str) -
     )
 
 
-def consume_grant(*, token: str, raw_phone: str, purpose: str) -> OTPChallenge:
+def consume_grant(
+    *,
+    token: str,
+    raw_phone: str,
+    purpose: str,
+    allow_consumed: bool = False,
+) -> OTPChallenge:
     phone_number = normalize_phone_number(raw_phone)
     try:
         payload = signing.loads(
@@ -155,16 +164,19 @@ def consume_grant(*, token: str, raw_phone: str, purpose: str) -> OTPChallenge:
         raise ValueError(GENERIC_VERIFY_ERROR)
 
     try:
-        challenge = OTPChallenge.objects.select_for_update().get(
+        query = OTPChallenge.objects.select_for_update().filter(
             pk=payload.get("challenge_id"),
             phone_number=phone_number,
             purpose=purpose,
-            consumed_at__isnull=True,
             verified_at__isnull=False,
         )
+        if not allow_consumed:
+            query = query.filter(consumed_at__isnull=True)
+        challenge = query.get()
     except (OTPChallenge.DoesNotExist, ValidationError, ValueError) as exc:
         raise ValueError(GENERIC_VERIFY_ERROR) from exc
 
-    challenge.consumed_at = timezone.now()
-    challenge.save(update_fields=["consumed_at"])
+    if challenge.consumed_at is None:
+        challenge.consumed_at = timezone.now()
+        challenge.save(update_fields=["consumed_at"])
     return challenge

@@ -159,7 +159,9 @@ ENDPOINTS = (
     EndpointCase("settings_patch", "patch", lambda c: "/api/v1/settings/", frozenset({"admin"})),
     EndpointCase("verification_get", "get", lambda c: "/api/v1/doctors/verification/", DOCTORS),
     EndpointCase("verification_submit", "post", lambda c: "/api/v1/doctors/verification/submit/", DOCTORS),
-    EndpointCase("patient_appointment_create", "post", lambda c: "/api/v1/appointments/", frozenset({"patient"})),
+    EndpointCase("appointment_create", "post", lambda c: "/api/v1/appointments/", frozenset({"guest", "patient"})),
+    EndpointCase("booking_captcha", "post", lambda c: "/api/v1/appointments/captcha/", frozenset({"guest", "patient", "doctor_unverified", "doctor_rejected", "doctor_approved", "admin"})),
+    EndpointCase("appointment_claim", "post", lambda c: "/api/v1/appointments/claim/", frozenset({"patient"})),
     EndpointCase("patient_appointment_list", "get", lambda c: "/api/v1/appointments/me/", frozenset({"patient"})),
     EndpointCase(
         "patient_appointment_cancel",
@@ -349,7 +351,8 @@ def test_public_endpoints_are_anonymous(authorization_context):
     client = APIClient()
     public_requests = (
         ("get", "/api/v1/appointments/slots/", {}),
-        ("post", "/api/v1/appointments/guest/", {}),
+        ("post", "/api/v1/appointments/", {}),
+        ("post", "/api/v1/appointments/captcha/", {}),
         ("post", "/api/v1/chat/guest-message/", {}),
         ("post", "/api/v1/auth/signup/", {}),
         ("post", "/api/v1/auth/login/", {}),

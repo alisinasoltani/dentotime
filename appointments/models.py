@@ -1,9 +1,15 @@
 import uuid
+import hashlib
+import hmac
+
+from django.conf import settings
 from django.contrib.postgres.constraints import ExclusionConstraint
 from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
+
+from accounts.validators import validate_e164_phone
 
 class AppointmentSlot(models.Model):
     class Status(models.TextChoices):
@@ -178,6 +184,58 @@ class AvailabilityOverride(models.Model):
         ]
 
 
+class BookingCaptchaChallenge(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    answer_digest = models.CharField(max_length=64, editable=False)
+    expires_at = models.DateTimeField()
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    max_attempts = models.PositiveSmallIntegerField(default=5)
+    requested_ip = models.GenericIPAddressField(null=True, blank=True)
+    device_hash = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["expires_at"],
+                condition=models.Q(consumed_at__isnull=True),
+                name="captcha_unconsumed_expiry_idx",
+            ),
+            models.Index(fields=["device_hash", "-created_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(max_attempts__gt=0),
+                name="captcha_max_attempts_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(attempt_count__lte=models.F("max_attempts")),
+                name="captcha_attempts_within_limit",
+            ),
+        ]
+
+    def set_answer(self, answer: str) -> None:
+        message = f"{self.pk}:{answer.strip().upper()}".encode()
+        self.answer_digest = hmac.new(
+            settings.CAPTCHA_HASH_KEY.encode(), message, hashlib.sha256
+        ).hexdigest()
+
+    def answer_matches(self, answer: str) -> bool:
+        message = f"{self.pk}:{answer.strip().upper()}".encode()
+        candidate = hmac.new(
+            settings.CAPTCHA_HASH_KEY.encode(), message, hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(self.answer_digest, candidate)
+
+    def is_valid(self) -> bool:
+        return bool(
+            self.consumed_at is None
+            and self.attempt_count < self.max_attempts
+            and timezone.now() < self.expires_at
+        )
+
+
 class Appointment(models.Model):
     class Status(models.TextChoices):
         PENDING = "PENDING", "Pending"
@@ -189,9 +247,23 @@ class Appointment(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    patient = models.ForeignKey("accounts.NormalUser", on_delete=models.CASCADE, related_name="appointments")
+    patient = models.ForeignKey(
+        "accounts.NormalUser",
+        on_delete=models.SET_NULL,
+        related_name="appointments",
+        null=True,
+        blank=True,
+    )
     slot = models.ForeignKey(AppointmentSlot, on_delete=models.PROTECT, related_name="appointments")
     idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    contact_phone_number = models.CharField(
+        max_length=20,
+        validators=[validate_e164_phone],
+        db_index=True,
+    )
+    contact_first_name = models.CharField(max_length=150)
+    contact_last_name = models.CharField(max_length=150, blank=True, default="")
 
     reason = models.TextField(blank=True, default="")
     admin_notes = models.TextField(blank=True, default="")
@@ -231,7 +303,18 @@ class Appointment(models.Model):
                 ),
                 name="appointment_valid_status",
             ),
+            models.CheckConstraint(
+                condition=~models.Q(contact_phone_number=""),
+                name="appointment_contact_phone_required",
+            ),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.patient_id and not self.contact_phone_number:
+            self.contact_phone_number = self.patient.phone_number
+            self.contact_first_name = self.patient.first_name
+            self.contact_last_name = self.patient.last_name
+        super().save(*args, **kwargs)
 
     @property
     def start_at(self):

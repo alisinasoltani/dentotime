@@ -26,8 +26,10 @@ This policy is enforced by backend authentication, role permissions, and object-
 | Doctor like/review creation | POST | No | Approved, active doctors | No | No | No |
 | Doctor verification status/submission | GET/POST | No | No | Own | Own | No |
 | Available appointment slots | GET | Public | Public | Public | Public | Public |
-| Guest appointment/message | POST | Public | Public | Public | Public | Public |
-| Patient appointment create/list/cancel | POST/GET/POST | No | Own | No | No | No |
+| Appointment CAPTCHA | POST | Public | Public | Public | Public | Public |
+| Unified appointment booking | POST | CAPTCHA + contact snapshot | Own account | No | No | No |
+| Guest message | POST | Public | Public | Public | Public | Public |
+| Patient appointment list/cancel/verified claim | GET/POST/POST | No | Own | No | No | No |
 | Thread list | GET | No | Own | No | Own | All |
 | Thread get/create | POST | No | Own | No | Own | No |
 | Thread messages and read status | GET/POST/PATCH | No | Own | No | Own | All |
@@ -44,6 +46,7 @@ This policy is enforced by backend authentication, role permissions, and object-
 ## Object boundaries
 
 - Patients can list and cancel only their own appointments.
+- Guest appointment contacts are immutable snapshots and never create or update an account. Only a verified, matching patient phone can claim them.
 - Patients and approved doctors can access only the message thread whose participant is their account.
 - Administrators may access all threads, but `assigned_admin` accepts only an active administrator.
 - Doctor verification endpoints always resolve the authenticated doctor's profile; they do not accept another doctor's identifier.

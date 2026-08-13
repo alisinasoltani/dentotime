@@ -33,6 +33,7 @@ DEBUG = env_bool("DEBUG", default=False)
 SECRET_KEY = os.getenv("SECRET_KEY", "")
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", "")
 OTP_HASH_KEY = os.getenv("OTP_HASH_KEY", "")
+CAPTCHA_HASH_KEY = os.getenv("CAPTCHA_HASH_KEY", "")
 
 if not SECRET_KEY:
     raise ImproperlyConfigured("SECRET_KEY is required.")
@@ -50,10 +51,17 @@ if IS_PRODUCTION and OTP_HASH_KEY in {SECRET_KEY, JWT_SIGNING_KEY}:
     raise ImproperlyConfigured("OTP_HASH_KEY must be independent in production.")
 if not OTP_HASH_KEY:
     OTP_HASH_KEY = SECRET_KEY
+if IS_PRODUCTION and not CAPTCHA_HASH_KEY:
+    raise ImproperlyConfigured("CAPTCHA_HASH_KEY is required in production.")
+if IS_PRODUCTION and CAPTCHA_HASH_KEY in {SECRET_KEY, JWT_SIGNING_KEY, OTP_HASH_KEY}:
+    raise ImproperlyConfigured("CAPTCHA_HASH_KEY must be independent in production.")
+if not CAPTCHA_HASH_KEY:
+    CAPTCHA_HASH_KEY = SECRET_KEY
 
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost" if not IS_PRODUCTION else "")
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+TRUSTED_PROXY_IPS = frozenset(env_list("TRUSTED_PROXY_IPS"))
 
 if IS_PRODUCTION and (not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS):
     raise ImproperlyConfigured("Production ALLOWED_HOSTS must be explicit and cannot contain '*'.")
@@ -257,6 +265,17 @@ OTP_DEVICE_RATE_LIMIT = int(os.getenv("OTP_DEVICE_RATE_LIMIT", "5"))
 SMS_CONNECT_TIMEOUT_SECONDS = float(os.getenv("SMS_CONNECT_TIMEOUT_SECONDS", "2"))
 SMS_READ_TIMEOUT_SECONDS = float(os.getenv("SMS_READ_TIMEOUT_SECONDS", "5"))
 AVAILABILITY_MAX_RANGE_DAYS = int(os.getenv("AVAILABILITY_MAX_RANGE_DAYS", "62"))
+CAPTCHA_TTL_SECONDS = int(os.getenv("CAPTCHA_TTL_SECONDS", "300"))
+CAPTCHA_MAX_ATTEMPTS = int(os.getenv("CAPTCHA_MAX_ATTEMPTS", "5"))
+CAPTCHA_RATE_WINDOW_SECONDS = int(os.getenv("CAPTCHA_RATE_WINDOW_SECONDS", "600"))
+CAPTCHA_IP_RATE_LIMIT = int(os.getenv("CAPTCHA_IP_RATE_LIMIT", "20"))
+CAPTCHA_DEVICE_RATE_LIMIT = int(os.getenv("CAPTCHA_DEVICE_RATE_LIMIT", "10"))
+GUEST_BOOKING_RATE_WINDOW_SECONDS = int(
+    os.getenv("GUEST_BOOKING_RATE_WINDOW_SECONDS", "3600")
+)
+GUEST_BOOKING_PHONE_RATE_LIMIT = int(os.getenv("GUEST_BOOKING_PHONE_RATE_LIMIT", "3"))
+GUEST_BOOKING_IP_RATE_LIMIT = int(os.getenv("GUEST_BOOKING_IP_RATE_LIMIT", "12"))
+GUEST_BOOKING_DEVICE_RATE_LIMIT = int(os.getenv("GUEST_BOOKING_DEVICE_RATE_LIMIT", "6"))
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = IS_PRODUCTION

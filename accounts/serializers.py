@@ -51,12 +51,17 @@ class SignupSerializer(serializers.Serializer):
             )
         except ValueError as exc:
             raise serializers.ValidationError({"otp_token": str(exc)}) from exc
-        return model_class.objects.create_user(
+        user = model_class.objects.create_user(
             phone_number=phone,
             password=password,
             role=user_type,
             **validated_data,
         )
+        if user_type == "USER":
+            from appointments.services import claim_guest_appointments
+
+            claim_guest_appointments(patient=user)
+        return user
 
 class UserDetailSerializer(serializers.ModelSerializer):
     """Read-only serializer for returning user info."""

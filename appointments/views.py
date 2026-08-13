@@ -7,10 +7,19 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from collections import defaultdict
 from datetime import datetime, timedelta
 from rest_framework.permissions import AllowAny
+from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
 
-from accounts.models import NormalUser
+from accounts.models import OTPChallenge
+from accounts.otp import consume_grant
 from accounts.permissions import IsNormalUser, IsAdminRole
 from .availability import clinic_today, generate_availability, validate_date_range
+from .captcha import (
+    GENERIC_CAPTCHA_ERROR,
+    create_booking_captcha,
+    enforce_guest_booking_throttles,
+    verify_and_consume_captcha,
+)
 from .models import (
     AppointmentSlot,
     Appointment,
@@ -20,7 +29,7 @@ from .models import (
 )
 from .serializers import (
     AppointmentSlotSerializer, AppointmentCreateSerializer, AppointmentListSerializer,
-    AppointmentCancelSerializer, AdminAppointmentUpdateSerializer, GuestAppointmentCreateSerializer,
+    AppointmentCancelSerializer, AdminAppointmentUpdateSerializer, AppointmentClaimSerializer,
     AvailabilityBreakSerializer, AvailabilityGenerationSerializer,
     AvailabilityOverrideSerializer, WeeklyAvailabilityRuleSerializer,
 )
@@ -31,6 +40,7 @@ from .services import (
     SlotUnavailable,
     book_appointment,
     cancel_patient_appointment,
+    claim_guest_appointments,
     parse_idempotency_key,
     transition_appointment,
 )
@@ -145,18 +155,44 @@ class AvailabilityGenerateView(APIView):
 
 
 class AppointmentCreateView(APIView):
-    permission_classes = (IsNormalUser,)
+    permission_classes = (AllowAny,)
 
     def post(self, request):
-        serializer = AppointmentCreateSerializer(data=request.data)
+        if request.user.is_authenticated and not request.user.is_normal_user:
+            return Response(
+                {"detail": "Only patient accounts can create appointments."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = AppointmentCreateSerializer(
+            data=request.data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         try:
             key = parse_idempotency_key(request.headers.get("Idempotency-Key"))
+            is_guest = not request.user.is_authenticated
+            is_idempotent_retry = Appointment.objects.filter(
+                idempotency_key=key
+            ).only("pk").exists()
+            if is_guest:
+                patient = None
+                if not is_idempotent_retry:
+                    phone = serializer.validated_data["phone_number"]
+                    enforce_guest_booking_throttles(request, phone)
+                    verify_and_consume_captcha(
+                        request,
+                        challenge_id=serializer.validated_data["captcha_challenge_id"],
+                        answer=serializer.validated_data["captcha_answer"],
+                    )
+            else:
+                patient = request.user.normaluser
             result = book_appointment(
-                patient=request.user.normaluser,
+                patient=patient,
                 slot_id=serializer.validated_data["slot_id"],
                 reason=serializer.validated_data.get("reason", ""),
                 idempotency_key=key,
+                contact_phone_number=serializer.validated_data.get("phone_number"),
+                contact_first_name=serializer.validated_data.get("first_name"),
+                contact_last_name=serializer.validated_data.get("last_name", ""),
             )
         except AppointmentSlot.DoesNotExist:
             return Response({"slot_id": "Slot not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -164,10 +200,61 @@ class AppointmentCreateView(APIView):
             return Response({"slot_id": str(exc)}, status=status.HTTP_409_CONFLICT)
         except IdempotencyConflict as exc:
             return Response({"idempotency_key": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except ValueError:
+            return Response(
+                {"captcha_answer": GENERIC_CAPTCHA_ERROR},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         return Response(
-            AppointmentListSerializer(result.appointment, context={"request": request}).data,
+            {
+                **AppointmentListSerializer(
+                    result.appointment, context={"request": request}
+                ).data,
+                "authenticated": not is_guest,
+            },
             status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
         )
+
+
+class BookingCaptchaCreateView(APIView):
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+
+    def post(self, request):
+        challenge, image_data_url = create_booking_captcha(request)
+        response = Response(
+            {
+                "challenge_id": str(challenge.pk),
+                "image_data_url": image_data_url,
+                "expires_in": int((challenge.expires_at - timezone.now()).total_seconds()),
+            },
+            status=status.HTTP_201_CREATED,
+        )
+        response["Cache-Control"] = "no-store, private"
+        response["Pragma"] = "no-cache"
+        return response
+
+
+class AppointmentClaimView(APIView):
+    permission_classes = (IsNormalUser,)
+
+    def post(self, request):
+        serializer = AppointmentClaimSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            with transaction.atomic():
+                consume_grant(
+                    token=serializer.validated_data["otp_token"],
+                    raw_phone=request.user.phone_number,
+                    purpose=OTPChallenge.Purpose.APPOINTMENT_CLAIM,
+                    allow_consumed=True,
+                )
+                claimed, total = claim_guest_appointments(
+                    patient=request.user.normaluser
+                )
+        except (ValueError, DjangoValidationError) as exc:
+            return Response({"otp_token": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"claimed": claimed, "total": total})
 
 class MyAppointmentListView(generics.ListAPIView):
     serializer_class = AppointmentListSerializer
@@ -279,59 +366,6 @@ class AdminAppointmentCalendarView(APIView):
             
         return Response(calendar_data)
     
-class GuestAppointmentCreateView(generics.CreateAPIView):
-    """Allows unauthenticated users to book an appointment."""
-    serializer_class = GuestAppointmentCreateSerializer
-    permission_classes = [AllowAny]
-    authentication_classes = [] # <--- هیچ توکنی بررسی نشود
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        try:
-            key = parse_idempotency_key(request.headers.get("Idempotency-Key"))
-        except IdempotencyConflict as exc:
-            return Response({"idempotency_key": str(exc)}, status=status.HTTP_409_CONFLICT)
-        slot_id = serializer.validated_data["slot_id"]
-        phone = serializer.validated_data["phone_number"]
-        first_name = serializer.validated_data["first_name"]
-        last_name = serializer.validated_data["last_name"]
-        reason = serializer.validated_data.get("reason", "")
-
-        # پیدا کردن کاربر موجود یا ساخت کاربر جدید (بدون رمز عبور)
-        user, created = NormalUser.objects.get_or_create(
-            phone_number=phone,
-            defaults={
-                "first_name": first_name,
-                "last_name": last_name,
-                "role": "USER",
-            }
-        )
-
-        # اگر کاربر قبلاً ثبت‌نام کرده اما اسمش عوض شده، آپدیتش می‌کنیم
-        if not created:
-            user.first_name = first_name
-            user.last_name = last_name
-            user.save(update_fields=["first_name", "last_name"])
-
-        try:
-            result = book_appointment(
-                patient=user,
-                slot_id=slot_id,
-                reason=reason,
-                idempotency_key=key,
-            )
-        except AppointmentSlot.DoesNotExist:
-            return Response({"slot_id": "Slot not found."}, status=status.HTTP_404_NOT_FOUND)
-        except SlotUnavailable as exc:
-            return Response({"slot_id": str(exc)}, status=status.HTTP_409_CONFLICT)
-        except IdempotencyConflict as exc:
-            return Response({"idempotency_key": str(exc)}, status=status.HTTP_409_CONFLICT)
-        return Response(
-            AppointmentListSerializer(result.appointment, context={"request": request}).data,
-            status=status.HTTP_201_CREATED if result.created else status.HTTP_200_OK,
-        )
-        
 class AdminSlotDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Admin view to retrieve, update, or delete a specific slot."""
     serializer_class = AppointmentSlotSerializer

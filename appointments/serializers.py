@@ -13,7 +13,7 @@ from .models import (
     WeeklyAvailabilityRule,
 )
 from accounts.models import User
-from accounts.validators import validate_e164_phone
+from accounts.validators import normalize_phone_number
 
 class AppointmentSlotSerializer(serializers.ModelSerializer):
     class Meta:
@@ -59,11 +59,33 @@ class AppointmentSlotSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A slot with an active booking must remain BOOKED.")
         return value
 
-class AppointmentCreateSerializer(serializers.ModelSerializer):
+class AppointmentCreateSerializer(serializers.Serializer):
     slot_id = serializers.IntegerField(write_only=True)
-    class Meta:
-        model = Appointment
-        fields = ("id", "slot_id", "reason")
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+    phone_number = serializers.CharField(required=False, write_only=True)
+    first_name = serializers.CharField(required=False, max_length=150, write_only=True)
+    last_name = serializers.CharField(required=False, max_length=150, allow_blank=True, write_only=True)
+    captcha_challenge_id = serializers.UUIDField(required=False, write_only=True)
+    captcha_answer = serializers.CharField(required=False, max_length=12, write_only=True, trim_whitespace=True)
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user and user.is_authenticated:
+            if not user.is_normal_user:
+                raise serializers.ValidationError(
+                    {"detail": "Only patient accounts can create appointments."}
+                )
+            return attrs
+
+        required = ("phone_number", "first_name", "captcha_challenge_id", "captcha_answer")
+        missing = [field for field in required if not attrs.get(field)]
+        if missing:
+            raise serializers.ValidationError(
+                {field: "This field is required for guest bookings." for field in missing}
+            )
+        attrs["phone_number"] = normalize_phone_number(attrs["phone_number"])
+        return attrs
 
 class PatientSerializer(serializers.ModelSerializer):
     class Meta:
@@ -78,13 +100,14 @@ class AppointmentListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Appointment
         fields = (
-            "id", "patient", "slot", "status", "reason", 
+            "id", "patient", "contact_phone_number", "contact_first_name",
+            "contact_last_name", "slot", "status", "reason",
             "created_at", "approved_at", "cancelled_at", "can_cancel", "admin_notes"
         )
 
     def get_can_cancel(self, obj):
         request = self.context.get("request")
-        if request and request.user == obj.patient:
+        if request and obj.patient_id and request.user == obj.patient:
             return obj.can_be_cancelled_by_user()
         return False
 
@@ -104,13 +127,8 @@ class AdminAppointmentUpdateSerializer(serializers.ModelSerializer):
             })
         return attrs
     
-class GuestAppointmentCreateSerializer(serializers.Serializer):
-    """Serializer for unauthenticated users to book an appointment."""
-    slot_id = serializers.IntegerField(write_only=True)
-    phone_number = serializers.CharField(validators=[validate_e164_phone], write_only=True,)
-    first_name = serializers.CharField(max_length=150, write_only=True,)
-    last_name = serializers.CharField(max_length=150, write_only=True,)
-    reason = serializers.CharField(required=False, allow_blank=True)
+class AppointmentClaimSerializer(serializers.Serializer):
+    otp_token = serializers.CharField(write_only=True)
 
 
 class WeeklyAvailabilityRuleSerializer(serializers.ModelSerializer):
