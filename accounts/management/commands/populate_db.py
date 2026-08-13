@@ -1,6 +1,7 @@
+import os
 import random
 from datetime import timedelta
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from accounts.models import NormalUser, Doctor, User
 from core.models import SystemSettings
@@ -10,7 +11,27 @@ from messaging.models import MessageThread, Message
 class Command(BaseCommand):
     help = "Populates the database with realistic Persian sample data"
 
-    def handle(self, *args, **kwargs):
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--confirm-destructive",
+            action="store_true",
+            help="Acknowledge that existing non-superuser data will be deleted.",
+        )
+
+    def handle(self, *args, **options):
+        environment = os.getenv("DJANGO_ENVIRONMENT", "production").strip().lower()
+        seeding_enabled = os.getenv("ALLOW_DESTRUCTIVE_SEEDING", "").strip().lower()
+        seed_password = os.getenv("SEED_USER_PASSWORD", "")
+
+        if environment not in {"development", "test"}:
+            raise CommandError("populate_db is disabled outside development and test environments.")
+        if seeding_enabled != "true":
+            raise CommandError("Set ALLOW_DESTRUCTIVE_SEEDING=true to enable this command.")
+        if not options["confirm_destructive"]:
+            raise CommandError("Pass --confirm-destructive to acknowledge data deletion.")
+        if len(seed_password) < 12:
+            raise CommandError("SEED_USER_PASSWORD must contain at least 12 characters.")
+
         self.stdout.write(self.style.SUCCESS("شروع پاکسازی و ساخت دیتای تستی..."))
 
         # Clean up old data (except the superuser you created)
@@ -23,7 +44,7 @@ class Command(BaseCommand):
 
         # 1. Create Admin User
         admin = User.objects.create_user(
-            phone_number="+989120000001", password="TestPass123!", role="ADMIN",
+            phone_number="+989120000001", password=seed_password, role="ADMIN",
             first_name="مدیر", last_name="کلینیک"
         )
         self.stdout.write("ادمین ساخته شد.")
@@ -38,7 +59,7 @@ class Command(BaseCommand):
         for i, (first, last) in enumerate(user_names):
             phone = f"+9891200000{10 + i:02d}"
             u = NormalUser.objects.create_user(
-                phone_number=phone, password="TestPass123!", role="USER",
+                phone_number=phone, password=seed_password, role="USER",
                 first_name=first, last_name=last
             )
             users.append(u)
@@ -57,7 +78,7 @@ class Command(BaseCommand):
         for i, (first, last, status) in enumerate(doctor_names):
             phone = f"+9891200000{50 + i:02d}"
             d = Doctor.objects.create_user(
-                phone_number=phone, password="TestPass123!", role="DOCTOR",
+                phone_number=phone, password=seed_password, role="DOCTOR",
                 first_name=first, last_name=last
             )
             if status != "NOT_SUBMITTED":
