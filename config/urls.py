@@ -25,13 +25,10 @@ urlpatterns = [
     # Core utilities (files, settings)
     path("api/v1/", include("core.urls")),
     
-    path('silk/', include('silk.urls', namespace='silk')),
 ]
 
+if settings.ENABLE_SILK:
+    urlpatterns.append(path("silk/", include("silk.urls", namespace="silk")))
 
-# Serve media files
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-else:
-    # In production, WhiteNoise can serve media files if configured like this:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

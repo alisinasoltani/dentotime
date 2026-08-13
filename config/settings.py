@@ -1,24 +1,61 @@
-"""
-Django settings for config project.
-"""
+"""Django settings for the Dentotime API."""
 
 import os
-from pathlib import Path
 from datetime import timedelta
+from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
+from django.utils.csp import CSP
 from dotenv import load_dotenv
 
-# This points to the backend/ folder
-BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Local development may use an ignored .env file. Deployed environments should
-# inject these values through their secret manager instead.
+BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = os.environ["SECRET_KEY"]  # Raises error if missing
-DEBUG = os.getenv("DEBUG", "False") == "True"  # Defaults to False
+TRUE_VALUES = {"1", "true", "yes", "on"}
 
-allowed_hosts_env: str = os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost")
-ALLOWED_HOSTS: list[str] = ["*"] if allowed_hosts_env == "*" else allowed_hosts_env.split(",")
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    return default if value is None else value.strip().lower() in TRUE_VALUES
+
+
+def env_list(name: str, default: str = "") -> list[str]:
+    return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
+
+
+DJANGO_ENVIRONMENT = os.getenv("DJANGO_ENVIRONMENT", "production").strip().lower()
+if DJANGO_ENVIRONMENT not in {"development", "test", "production"}:
+    raise ImproperlyConfigured("DJANGO_ENVIRONMENT must be development, test, or production.")
+
+IS_PRODUCTION = DJANGO_ENVIRONMENT == "production"
+DEBUG = env_bool("DEBUG", default=False)
+SECRET_KEY = os.getenv("SECRET_KEY", "")
+JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", "")
+
+if not SECRET_KEY:
+    raise ImproperlyConfigured("SECRET_KEY is required.")
+if IS_PRODUCTION and DEBUG:
+    raise ImproperlyConfigured("DEBUG must be false in production.")
+if IS_PRODUCTION and not JWT_SIGNING_KEY:
+    raise ImproperlyConfigured("JWT_SIGNING_KEY is required in production.")
+if IS_PRODUCTION and JWT_SIGNING_KEY == SECRET_KEY:
+    raise ImproperlyConfigured("JWT_SIGNING_KEY must differ from SECRET_KEY in production.")
+if not JWT_SIGNING_KEY:
+    JWT_SIGNING_KEY = SECRET_KEY
+
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost" if not IS_PRODUCTION else "")
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+
+if IS_PRODUCTION and (not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS):
+    raise ImproperlyConfigured("Production ALLOWED_HOSTS must be explicit and cannot contain '*'.")
+if IS_PRODUCTION and not CORS_ALLOWED_ORIGINS:
+    raise ImproperlyConfigured("CORS_ALLOWED_ORIGINS is required in production.")
+if IS_PRODUCTION and not CSRF_TRUSTED_ORIGINS:
+    raise ImproperlyConfigured("CSRF_TRUSTED_ORIGINS is required in production.")
+
+ENABLE_SILK = not IS_PRODUCTION and env_bool("ENABLE_SILK", default=False)
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -27,32 +64,34 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    # Third-party
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
-    "rest_framework_simplejwt.token_blacklist", # <--- ADD THIS
-    # Local
+    "rest_framework_simplejwt.token_blacklist",
     "accounts",
     "appointments",
     "messaging",
     "core",
-    "silk",
 ]
+if ENABLE_SILK:
+    INSTALLED_APPS.append("silk")
 
-MIDDLEWARE: list[str] = [
-    "corsheaders.middleware.CorsMiddleware",
-    "silk.middleware.SilkyMiddleware",
+MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "django.middleware.csp.ContentSecurityPolicyMiddleware",
+    "core.middleware.SecurityHeadersMiddleware",
 ]
+if ENABLE_SILK:
+    MIDDLEWARE.insert(2, "silk.middleware.SilkyMiddleware")
 
-ROOT_URLCONF: str = "config.urls"
+ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
     {
@@ -70,16 +109,18 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION: str = "config.wsgi.application"
+WSGI_APPLICATION = "config.wsgi.application"
 
-# DATABASES: dict = {
-#     "default": {
-#         "ENGINE": "django.db.backends.sqlite3",
-#         "NAME": BASE_DIR / "db.sqlite3",
-#     }
-# }
+DB_SSLMODE = os.getenv("DB_SSLMODE", "verify-full" if IS_PRODUCTION else "disable")
+if IS_PRODUCTION and DB_SSLMODE not in {"verify-ca", "verify-full"}:
+    raise ImproperlyConfigured("Production DB_SSLMODE must verify the PostgreSQL certificate.")
 
-SMS_IR_API_KEY = os.getenv("SMS_IR_API_KEY", "")
+database_options = {
+    "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "10")),
+    "sslmode": DB_SSLMODE,
+}
+if ssl_root_cert := os.getenv("DB_SSLROOTCERT"):
+    database_options["sslrootcert"] = ssl_root_cert
 
 DATABASES = {
     "default": {
@@ -89,39 +130,65 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASS"),
         "HOST": os.getenv("DB_HOST"),
         "PORT": os.getenv("DB_PORT"),
-        
-        # Security & Performance options for Postgres
-        "OPTIONS": {
-            # Requires SSL in production, comment out if testing locally without SSL
-            # "sslmode": "require", 
-            "connect_timeout": 10,
-        },
+        "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
+        "CONN_HEALTH_CHECKS": True,
+        "OPTIONS": database_options,
     }
 }
 
-AUTH_PASSWORD_VALIDATORS: list[dict] = [
+if IS_PRODUCTION:
+    missing_database_values = [
+        name
+        for name in ("DB_NAME", "DB_USER", "DB_PASS", "DB_HOST", "DB_PORT")
+        if not os.getenv(name)
+    ]
+    if missing_database_values:
+        raise ImproperlyConfigured(
+            "Missing production database variables: " + ", ".join(missing_database_values)
+        )
+
+REDIS_URL = os.getenv("REDIS_URL", "")
+if IS_PRODUCTION and not REDIS_URL:
+    raise ImproperlyConfigured("REDIS_URL is required in production.")
+
+if REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+            "KEY_PREFIX": os.getenv("CACHE_KEY_PREFIX", "dentotime"),
+            "TIMEOUT": 300,
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "dentotime-development",
+        }
+    }
+
+AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-LANGUAGE_CODE: str = "en-us"
-TIME_ZONE: str = "UTC"
-USE_I18N: bool = True
-USE_TZ: bool = True
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"
+USE_I18N = True
+USE_TZ = True
 
-STATIC_URL: str = "static/"
-DEFAULT_AUTO_FIELD: str = "django.db.models.BigAutoField"
+STATIC_URL = "static/"
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+AUTH_USER_MODEL = "accounts.User"
 
-# Custom user model
-AUTH_USER_MODEL: str = "accounts.User"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
-
-# CORS
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = not IS_PRODUCTION and env_bool("CORS_ALLOW_ALL_ORIGINS", default=False)
 CORS_ALLOW_CREDENTIALS = False
-
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",
@@ -133,17 +200,8 @@ CORS_ALLOW_HEADERS = [
     "x-csrftoken",
     "x-requested-with",
 ]
+CORS_ALLOW_METHODS = ["DELETE", "GET", "OPTIONS", "PATCH", "POST", "PUT"]
 
-CORS_ALLOW_METHODS = [
-    "DELETE",
-    "GET",
-    "OPTIONS",
-    "PATCH",
-    "POST",
-    "PUT",
-]
-
-# Django REST Framework
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -160,34 +218,83 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": "20/min",
         "user": "120/min",
-        "login": "5/min",      # <--- ADD THIS
-        "signup": "3/hour",    # <--- ADD THIS
+        "login": "5/min",
+        "signup": "3/hour",
     },
 }
 
-# Simple JWT
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": True,  # <--- CHANGE TO TRUE
+    "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
-    # Keep JWT rotation independent from Django's SECRET_KEY. Rotating this
-    # value invalidates every access and refresh token immediately.
-    "SIGNING_KEY": os.getenv("JWT_SIGNING_KEY", SECRET_KEY),
+    "SIGNING_KEY": JWT_SIGNING_KEY,
     "ISSUER": os.getenv("JWT_ISSUER", "dentotime-api"),
 }
 
-AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
-AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
-AWS_STORAGE_BUCKET_NAME: str = os.getenv("AWS_STORAGE_BUCKET_NAME", "")
-AWS_S3_ENDPOINT_URL: str = os.getenv("AWS_S3_ENDPOINT_URL", "")  # e.g., https://s3.yourprovider.com
-AWS_S3_REGION_NAME: str = os.getenv("AWS_S3_REGION_NAME", "us-east-1")
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_SSL_REDIRECT = IS_PRODUCTION
+SECURE_HSTS_SECONDS = 31_536_000 if IS_PRODUCTION else 0
+SECURE_HSTS_INCLUDE_SUBDOMAINS = IS_PRODUCTION
+SECURE_HSTS_PRELOAD = IS_PRODUCTION
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
+SESSION_COOKIE_SECURE = IS_PRODUCTION
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = IS_PRODUCTION
+CSRF_COOKIE_SAMESITE = "Lax"
+X_FRAME_OPTIONS = "DENY"
 
-# For custom providers, presigned URLs often need path-style addressing
-# (e.g., https://s3.provider.com/bucket-name instead of https://bucket-name.s3.provider.com)
+SECURE_CSP = {
+    "default-src": [CSP.SELF],
+    "base-uri": [CSP.SELF],
+    "connect-src": [CSP.SELF],
+    "font-src": [CSP.SELF, "data:"],
+    "form-action": [CSP.SELF],
+    "frame-ancestors": [CSP.NONE],
+    "img-src": [CSP.SELF, "data:"],
+    "object-src": [CSP.NONE],
+    "script-src": [CSP.SELF, CSP.UNSAFE_INLINE],
+    "style-src": [CSP.SELF, CSP.UNSAFE_INLINE],
+}
+SECURE_CSP_REPORT_ONLY = {}
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "redact_sensitive": {"()": "core.logging.RedactSensitiveDataFilter"},
+    },
+    "formatters": {
+        "standard": {
+            "format": "{asctime} {levelname} {name} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": ["redact_sensitive"],
+            "formatter": "standard",
+        },
+    },
+    "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
+    "loggers": {
+        "django.security.DisallowedHost": {
+            "handlers": ["console"],
+            "level": "WARNING",
+            "propagate": False,
+        }
+    },
+}
+
+SMS_IR_API_KEY = os.getenv("SMS_IR_API_KEY", "")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME", "")
+AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL", "")
+AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "us-east-1")
 AWS_S3_ADDRESSING_STYLE = "path"
-
-# Media Files (Local Storage)
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
