@@ -126,6 +126,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "config.wsgi.application"
+ASGI_APPLICATION = "config.asgi.application"
 
 DB_SSLMODE = os.getenv("DB_SSLMODE", "verify-full" if IS_PRODUCTION else "disable")
 if IS_PRODUCTION and DB_SSLMODE not in {"verify-ca", "verify-full"}:
@@ -184,6 +185,12 @@ else:
         }
     }
 
+CHAT_EVENT_STREAM_PREFIX = os.getenv("CHAT_EVENT_STREAM_PREFIX", "dentotime:chat:events")
+CHAT_EVENT_STREAM_MAX_LENGTH = int(os.getenv("CHAT_EVENT_STREAM_MAX_LENGTH", "10000"))
+CHAT_SSE_BLOCK_MILLISECONDS = int(os.getenv("CHAT_SSE_BLOCK_MILLISECONDS", "15000"))
+CHAT_SSE_MAX_CONNECTION_SECONDS = int(os.getenv("CHAT_SSE_MAX_CONNECTION_SECONDS", "540"))
+CHAT_DELTA_PAGE_SIZE = int(os.getenv("CHAT_DELTA_PAGE_SIZE", "100"))
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -217,6 +224,7 @@ CORS_ALLOW_HEADERS = [
     "x-device-id",
     "idempotency-key",
     "x-requested-with",
+    "last-event-id",
 ]
 CORS_ALLOW_METHODS = ["DELETE", "GET", "OPTIONS", "PATCH", "POST", "PUT"]
 

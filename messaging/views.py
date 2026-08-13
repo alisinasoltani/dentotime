@@ -1,5 +1,6 @@
 from datetime import datetime, timezone as datetime_timezone
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import (
     Count,
@@ -16,7 +17,7 @@ from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import CursorPagination
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -27,6 +28,7 @@ from accounts.permissions import IsAdminRole
 from core.sms_service import queue_new_message
 from messaging.models import Message, MessageAttachment, MessageThread, ThreadReadState
 from messaging.permissions import CanCreateOwnThread, IsParticipantOrAdmin
+from messaging.realtime import publish_message_event
 from messaging.serializers import (
     AdminThreadUpdateSerializer,
     GuestMessageSerializer,
@@ -46,6 +48,31 @@ def _visible_message_filter(user):
     if not user.is_admin_role:
         query &= Q(messages__visibility=Message.Visibility.PARTICIPANTS)
     return query
+
+
+def _message_queryset(*, thread, user):
+    queryset = Message.objects.filter(thread=thread, is_deleted=False)
+    if not user.is_admin_role:
+        queryset = queryset.filter(visibility=Message.Visibility.PARTICIPANTS)
+    return queryset.select_related("sender").prefetch_related(
+        Prefetch(
+            "attachments",
+            queryset=MessageAttachment.objects.filter(is_deleted=False).select_related(
+                "asset"
+            ),
+        )
+    )
+
+
+def _get_visible_thread(*, user, thread_id, for_update=False):
+    queryset = MessageThread.objects.filter(deleted_at__isnull=True).select_related(
+        "participant"
+    )
+    if for_update:
+        queryset = queryset.select_for_update(of=("self",))
+    if not user.is_admin_role:
+        queryset = queryset.filter(participant_id=user.pk)
+    return get_object_or_404(queryset, pk=thread_id)
 
 
 def _queue_notifications(*, sender, thread, visibility):
@@ -165,14 +192,11 @@ class MessageListCreateView(generics.ListCreateAPIView):
         cached = getattr(self, "_message_thread", None)
         if cached is not None and not for_update:
             return cached
-        queryset = MessageThread.objects.filter(deleted_at__isnull=True).select_related(
-            "participant"
+        thread = _get_visible_thread(
+            user=self.request.user,
+            thread_id=self.kwargs["pk"],
+            for_update=for_update,
         )
-        if for_update:
-            queryset = queryset.select_for_update(of=("self",))
-        if not self.request.user.is_admin_role:
-            queryset = queryset.filter(participant_id=self.request.user.id)
-        thread = get_object_or_404(queryset, pk=self.kwargs["pk"])
         self._message_thread = thread
         return thread
 
@@ -181,20 +205,8 @@ class MessageListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         thread = self.get_thread()
-        queryset = Message.objects.filter(thread=thread, is_deleted=False)
-        if not self.request.user.is_admin_role:
-            queryset = queryset.filter(visibility=Message.Visibility.PARTICIPANTS)
-        return (
-            queryset.select_related("sender")
-            .prefetch_related(
-                Prefetch(
-                    "attachments",
-                    queryset=MessageAttachment.objects.filter(is_deleted=False).select_related(
-                        "asset"
-                    ),
-                )
-            )
-            .order_by("-created_at", "-id")
+        return _message_queryset(thread=thread, user=self.request.user).order_by(
+            "-created_at", "-id"
         )
 
     @transaction.atomic
@@ -238,7 +250,49 @@ class MessageListCreateView(generics.ListCreateAPIView):
         response_serializer = MessageSerializer(
             message, context=self.get_serializer_context()
         )
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        response_data = response_serializer.data
+        publish_message_event(thread_id=message.thread_id, message_data=response_data)
+        return Response(response_data, status=status.HTTP_201_CREATED)
+
+
+class MessageDeltaView(APIView):
+    permission_classes = (IsParticipantOrAdmin,)
+
+    def get(self, request, pk):
+        thread = _get_visible_thread(user=request.user, thread_id=pk)
+        after = request.query_params.get("after", "").strip()
+        if not after:
+            raise ValidationError({"after": "A server-issued message cursor is required."})
+        cursor_queryset = Message.objects.filter(thread=thread, is_deleted=False)
+        if not request.user.is_admin_role:
+            cursor_queryset = cursor_queryset.filter(
+                visibility=Message.Visibility.PARTICIPANTS
+            )
+        cursor_message = get_object_or_404(
+            cursor_queryset.only("id", "created_at"), pk=after
+        )
+        visible = _message_queryset(thread=thread, user=request.user)
+        try:
+            requested_limit = int(request.query_params.get("limit", settings.CHAT_DELTA_PAGE_SIZE))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({"limit": "Enter a valid integer."}) from exc
+        limit = max(1, min(requested_limit, settings.CHAT_DELTA_PAGE_SIZE))
+        rows = list(
+            visible.filter(
+                Q(created_at__gt=cursor_message.created_at)
+                | Q(created_at=cursor_message.created_at, id__gt=cursor_message.id)
+            ).order_by("created_at", "id")[: limit + 1]
+        )
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        data = MessageSerializer(rows, many=True, context={"request": request}).data
+        return Response(
+            {
+                "cursor": str(rows[-1].pk) if rows else str(cursor_message.pk),
+                "has_more": has_more,
+                "results": data,
+            }
+        )
 
 
 class ThreadMarkReadView(APIView):
@@ -283,7 +337,9 @@ class GuestMessageView(APIView):
     def post(self, request):
         serializer = GuestMessageSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        message = serializer.save()
+        message_data = MessageSerializer(message, context={"request": request}).data
+        publish_message_event(thread_id=message.thread_id, message_data=message_data)
         phones = list(
             User.objects.filter(role=User.Role.ADMIN, is_active=True).values_list(
                 "phone_number", flat=True

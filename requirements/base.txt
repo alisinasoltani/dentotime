@@ -11,4 +11,5 @@ psycopg[binary]==3.3.4
 python-dotenv==1.2.2
 redis==8.0.1
 requests==2.34.2
+uvicorn==0.51.0
 tzdata==2026.2; platform_system == "Windows"
