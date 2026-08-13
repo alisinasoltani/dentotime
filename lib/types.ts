@@ -23,6 +23,7 @@ export interface AuthResponse {
 
 export interface ChatThread {
   id: string;
+  participant?: User;
   participants?: User[];
   unread_count: number;
   last_message?: string;
@@ -167,6 +168,7 @@ export type ChatMessageSender =
       role: UserRole;
       first_name?: string;
       last_name?: string;
+      phone_number?: string;
       profile_picture?: string | null;
     }
   | string

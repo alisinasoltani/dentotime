@@ -42,8 +42,7 @@ export default function ChatWindow({ thread, onBack }: ChatWindowProps) {
         if (!thread) return;
         try {
             const data = await getMessages(thread.id);
-            const rawMessages = Array.isArray(data) ? data : (data.results || []);
-            const sortedMsgs = [...rawMessages].reverse();
+            const sortedMsgs = [...data].reverse();
 
             setMessages((prev) => {
                 if (isInitial) return sortedMsgs;
@@ -84,6 +83,7 @@ export default function ChatWindow({ thread, onBack }: ChatWindowProps) {
             thread: thread.id,
             body: newMessage,
             sender: { id: "admin", first_name: "Admin", last_name: "", phone_number: "", role: "ADMIN" },
+            attachments: [],
             created_at: new Date().toISOString(),
         };
 
@@ -121,7 +121,13 @@ export default function ChatWindow({ thread, onBack }: ChatWindowProps) {
                 body: "",
                 sender: { id: "admin", first_name: "Admin", last_name: "", phone_number: "", role: "ADMIN" },
                 created_at: new Date().toISOString(),
-                attachments: [{ file_url: result.file_url, file_name: result.file_name, file_size: result.file_size }],
+                attachments: [{
+                    file_url: result.file_url,
+                    file_name: result.file_name,
+                    file_size: result.file_size,
+                    file_key: result.file_key,
+                    file_content_type: result.file_content_type,
+                }],
             };
 
             setMessages((prev) => [...prev, optimisticMessage]);

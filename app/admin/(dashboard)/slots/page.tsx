@@ -13,6 +13,23 @@ import { ChevronRight, ChevronLeft, Clock, PlusCircle, Loader2, Trash2 } from "l
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import type { AxiosResponse } from "axios";
+
+interface AppointmentSlot {
+    id: string | number;
+    date?: string;
+    start_at: string;
+    end_at: string;
+    status: string;
+    is_booked?: boolean;
+}
+
+interface PaginatedSlots {
+    results: AppointmentSlot[];
+    next: string | null;
+}
+
+type SlotsResponse = AppointmentSlot[] | PaginatedSlots;
 
 const WEEK_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'];
 
@@ -26,7 +43,7 @@ export default function SlotsManagementPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [deletingId, setDeletingId] = useState<string | number | null>(null);
 
-    const [slotsByDate, setSlotsByDate] = useState<Record<string, any[]>>({});
+    const [slotsByDate, setSlotsByDate] = useState<Record<string, AppointmentSlot[]>>({});
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
 
     useEffect(() => {
@@ -36,12 +53,12 @@ export default function SlotsManagementPage() {
                 const start = gFormat(startOfMonth(currentMonth), 'yyyy-MM-dd');
                 const end = gFormat(endOfMonth(currentMonth), 'yyyy-MM-dd');
 
-                let allSlots: any[] = [];
+                let allSlots: AppointmentSlot[] = [];
                 let url: string | null = `/appointments/slots/?start_date=${start}&end_date=${end}&_t=${Date.now()}`;
 
                 while (url) {
-                    const res = await api.get(url);
-                    const data = res.data;
+                    const res: AxiosResponse<SlotsResponse> = await api.get<SlotsResponse>(url);
+                    const data: SlotsResponse = res.data;
 
                     if (Array.isArray(data)) {
                         allSlots = allSlots.concat(data);
@@ -50,8 +67,8 @@ export default function SlotsManagementPage() {
                         allSlots = allSlots.concat(data.results);
                         if (data.next) {
                             try {
-                                const nextUrl = new URL(data.next);
-                                const pathWithQuery = nextUrl.pathname + nextUrl.search;
+                                const nextUrl: URL = new URL(data.next);
+                                const pathWithQuery: string = nextUrl.pathname + nextUrl.search;
                                 url = pathWithQuery.replace('/api/v1', '');
                             } catch {
                                 url = null;
@@ -62,8 +79,8 @@ export default function SlotsManagementPage() {
                     }
                 }
 
-                const map: Record<string, any[]> = {};
-                allSlots.forEach((slot: any) => {
+                const map: Record<string, AppointmentSlot[]> = {};
+                allSlots.forEach((slot) => {
                     const dateKey = slot.date || slot.start_at.slice(0, 10);
                     if (!map[dateKey]) map[dateKey] = [];
                     map[dateKey].push(slot);

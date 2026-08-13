@@ -62,10 +62,6 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  typescript: {
-    // Removed in step 4 after existing TypeScript failures are corrected.
-    ignoreBuildErrors: true,
-  },
 };
 
 export default nextConfig;

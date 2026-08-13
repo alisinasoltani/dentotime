@@ -1,10 +1,12 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
+import type { ClipboardEvent, FormEvent, KeyboardEvent, SVGProps } from "react"
 import { AnimatePresence, motion, useAnimationControls } from "framer-motion"
+import type { Transition } from "framer-motion"
 import { ChevronRight } from "lucide-react"
 
-const CheckIcon = ({ size = 16, strokeWidth = 3, ...props }) => (
+const CheckIcon = ({ size = 16, strokeWidth = 3, ...props }: SVGProps<SVGSVGElement> & { size?: number }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" {...props}>
     <path d="M20 6 9 17l-5-5" />
   </svg>
@@ -33,21 +35,30 @@ const OTPSuccess = () => {
   )
 }
 
-const OTPInputBox = ({ index, verifyOTP, state, isExpired }) => {
+type OTPState = "idle" | "error" | "success"
+
+interface OTPInputBoxProps {
+  index: number
+  verifyOTP: () => Promise<void>
+  state: OTPState
+  isExpired: boolean
+}
+
+const OTPInputBox = ({ index, verifyOTP, state, isExpired }: OTPInputBoxProps) => {
   const animationControls = useAnimationControls()
-  const springTransition = { type: "spring", stiffness: 700, damping: 20, delay: index * 0.05 }
-  const noDelaySpringTransition = { type: "spring", stiffness: 700, damping: 20 }
+  const noDelaySpringTransition: Transition = { type: "spring", stiffness: 700, damping: 20 }
 
   useEffect(() => {
+    const springTransition: Transition = { type: "spring", stiffness: 700, damping: 20, delay: index * 0.05 }
     animationControls.start({ opacity: 1, y: 0, transition: springTransition })
     return () => animationControls.stop()
-  }, [])
+  }, [animationControls, index])
 
   const onFocus = () => animationControls.start({ y: -5, transition: noDelaySpringTransition })
   const onBlur = () => animationControls.start({ y: 0, transition: noDelaySpringTransition })
 
-  const onKeyDown = (e) => {
-    const { value } = e.target
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    const { value } = e.currentTarget
     if (e.key === "Backspace" && !value && index > 0) {
       document.getElementById(`input-${index - 1}`)?.focus()
     } else if (e.key === "ArrowLeft" && index > 0) {
@@ -57,25 +68,25 @@ const OTPInputBox = ({ index, verifyOTP, state, isExpired }) => {
     }
   }
 
-  const onInput = (e) => {
-    const { value } = e.target
+  const onInput = (e: FormEvent<HTMLInputElement>) => {
+    const { value } = e.currentTarget
     if (value.match(/^[0-9]$/)) {
-      e.target.value = value
+      e.currentTarget.value = value
       if (index < 4) document.getElementById(`input-${index + 1}`)?.focus()
     } else {
-      e.target.value = ""
+      e.currentTarget.value = ""
     }
     verifyOTP()
   }
 
-  const onPaste = (e) => {
+  const onPaste = (e: ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault()
     const pastedData = e.clipboardData.getData("text").trim().slice(0, 5)
     const digits = pastedData.split("").filter((char) => /^[0-9]$/.test(char))
     digits.forEach((digit, i) => {
       const targetIndex = index + i
       if (targetIndex < 5) {
-        const input = document.getElementById(`input-${targetIndex}`)
+        const input = document.getElementById(`input-${targetIndex}`) as HTMLInputElement | null
         if (input) input.value = digit
       }
     })
@@ -115,19 +126,16 @@ export function OTPVerification({ phoneNumber, onVerify, onResend, onBack }: {
   onResend: () => Promise<void>; 
   onBack: () => void; 
 }) {
-  const [state, setState] = useState("idle")
+  const [state, setState] = useState<OTPState>("idle")
   const [countdown, setCountdown] = useState(60)
-  const [isExpired, setIsExpired] = useState(false)
+  const isExpired = countdown <= 0
   const animationControls = useAnimationControls()
 
   useEffect(() => {
-    if (countdown <= 0) {
-      setIsExpired(true)
-      return
-    }
+    if (isExpired) return
     const timer = setInterval(() => setCountdown((prev) => prev - 1), 1000)
     return () => clearInterval(timer)
-  }, [countdown])
+  }, [isExpired])
 
   const getCode = () => {
     let code = ""
@@ -137,6 +145,12 @@ export function OTPVerification({ phoneNumber, onVerify, onResend, onBack }: {
     }
     return code
   }
+
+  const errorAnimation = useCallback(async () => {
+    setState("error")
+    await animationControls.start({ x: [0, 5, -5, 5, -5, 0], transition: { duration: 0.3 } })
+    setTimeout(() => { if (getCode().length < 5) setState("idle") }, 500)
+  }, [animationControls])
 
   const verifyOTP = useCallback(async () => {
     const code = getCode()
@@ -148,15 +162,9 @@ export function OTPVerification({ phoneNumber, onVerify, onResend, onBack }: {
     if (isSuccess) {
       setState("success")
     } else {
-      errorAnimation()
+      await errorAnimation()
     }
-  }, [onVerify])
-
-  const errorAnimation = async () => {
-    setState("error")
-    await animationControls.start({ x: [0, 5, -5, 5, -5, 0], transition: { duration: 0.3 } })
-    setTimeout(() => { if (getCode().length < 5) setState("idle") }, 500)
-  }
+  }, [errorAnimation, onVerify])
 
   const handleResend = async () => {
     await onResend()
@@ -165,7 +173,6 @@ export function OTPVerification({ phoneNumber, onVerify, onResend, onBack }: {
       if (input) input.value = ""
     }
     setState("idle")
-    setIsExpired(false)
     setCountdown(60)
   }
 
@@ -185,6 +192,7 @@ export function OTPVerification({ phoneNumber, onVerify, onResend, onBack }: {
       <h1 className="text-md md:text-xl font-bold text-slate-800 mb-2 mt-4">
         {state === "success" ? "تایید شماره موفقیت آمیز بود" : "کد تایید را وارد کنید"}
       </h1>
+      <p className="mb-4 text-sm text-slate-500" dir="ltr">{phoneNumber}</p>
 
       <AnimatePresence mode="wait">
         {state === "success" ? (
