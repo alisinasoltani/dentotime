@@ -223,6 +223,18 @@ ENDPOINTS = (
     EndpointCase("admin_users", "get", lambda c: "/api/v1/admin/users/", frozenset({"admin"})),
     EndpointCase("admin_doctors", "get", lambda c: "/api/v1/admin/doctors/", frozenset({"admin"})),
     EndpointCase(
+        "admin_doctor_detail",
+        "get",
+        lambda c: f"/api/v1/admin/doctors/{c['doctor_approved'].pk}/",
+        frozenset({"admin"}),
+    ),
+    EndpointCase(
+        "admin_dashboard_summary",
+        "get",
+        lambda c: "/api/v1/admin/dashboard/summary/",
+        frozenset({"admin"}),
+    ),
+    EndpointCase(
         "admin_user_deactivate",
         "patch",
         lambda c: f"/api/v1/admin/users/{c['patient'].pk}/deactivate/",

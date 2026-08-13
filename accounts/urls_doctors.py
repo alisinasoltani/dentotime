@@ -1,7 +1,7 @@
 from django.urls import path
 from .views import (
     DoctorVerificationStatusView, DoctorVerificationSubmitView,
-    PublicDoctorListView, PublicDoctorDetailView, 
+    PublicDoctorListView, PublicDoctorPreviewView, PublicDoctorDetailView,
     DoctorOwnRatingVoterListView, LikeDoctorView, ReviewListCreateView
 )
 
@@ -13,6 +13,7 @@ urlpatterns = [
     
     # مسیرهای عمومی سایت برای دیدن دکترها
     path("list/", PublicDoctorListView.as_view(), name="public_doctor_list"),
+    path("preview/", PublicDoctorPreviewView.as_view(), name="public_doctor_preview"),
     path("<int:pk>/", PublicDoctorDetailView.as_view(), name="public_doctor_detail"),
     
     # مسیرهای تعاملی (نیازمند لاگین کاربر عادی)

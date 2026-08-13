@@ -4,10 +4,10 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 from rest_framework.filters import SearchFilter, OrderingFilter
-from collections import defaultdict
 from datetime import datetime, timedelta
 from rest_framework.permissions import AllowAny
 from django.db import transaction
+from django.db.models import Count, Q
 from django.core.exceptions import ValidationError as DjangoValidationError
 
 from accounts.models import OTPChallenge
@@ -292,21 +292,41 @@ class AppointmentCancelView(APIView):
 class AdminAppointmentListView(generics.ListAPIView):
     serializer_class = AppointmentListSerializer
     permission_classes = (IsAdminRole,)
-    filter_backends = [OrderingFilter]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = [
+        "patient__first_name",
+        "patient__last_name",
+        "patient__phone_number",
+        "contact_first_name",
+        "contact_last_name",
+        "contact_phone_number",
+    ]
     ordering_fields = ["slot__start_at", "created_at"]
+    ordering = ["-slot__start_at", "-id"]
     
     def get_queryset(self):
         qs = Appointment.objects.select_related("patient", "slot")
         status_param = self.request.query_params.get("status")
         if status_param:
             qs = qs.filter(status=status_param)
-        start_date = self.request.query_params.get("start_date")
+        raw_start = self.request.query_params.get("start_date")
+        raw_end = self.request.query_params.get("end_date")
+        try:
+            start_date = (
+                datetime.strptime(raw_start, "%Y-%m-%d").date() if raw_start else None
+            )
+            end_date = (
+                datetime.strptime(raw_end, "%Y-%m-%d").date() if raw_end else None
+            )
+        except ValueError as exc:
+            raise ValidationError({"detail": "Dates must use YYYY-MM-DD."}) from exc
+        if start_date and end_date:
+            validate_date_range(start_date, end_date)
         if start_date:
             qs = qs.filter(slot__date__gte=start_date)
-        end_date = self.request.query_params.get("end_date")
         if end_date:
             qs = qs.filter(slot__date__lte=end_date)
-        return qs
+        return qs.order_by("-slot__start_at", "-id")
 
 
 class AdminAppointmentUpdateView(generics.UpdateAPIView):
@@ -336,7 +356,7 @@ class AdminAppointmentUpdateView(generics.UpdateAPIView):
 
 
 class AdminAppointmentCalendarView(APIView):
-    """Returns appointments grouped by date for calendar rendering."""
+    """Return bounded daily aggregates for one Gregorian calendar month."""
     permission_classes = (IsAdminRole,)
 
     def get(self, request):
@@ -354,17 +374,27 @@ class AdminAppointmentCalendarView(APIView):
         except ValueError:
             return Response({"detail": "Invalid month format. Use YYYY-MM."}, status=status.HTTP_400_BAD_REQUEST)
         
-        appointments = Appointment.objects.filter(
+        days = Appointment.objects.filter(
             slot__date__gte=start_date,
             slot__date__lt=end_date
-        ).select_related("patient", "slot").order_by("slot__start_at")
-        
-        calendar_data = defaultdict(list)
-        for appt in appointments:
-            date_str = appt.slot.date.isoformat()
-            calendar_data[date_str].append(AppointmentListSerializer(appt, context={"request": request}).data)
-            
-        return Response(calendar_data)
+        ).values("slot__date").annotate(
+            total=Count("pk"),
+            pending=Count("pk", filter=Q(status=Appointment.Status.PENDING)),
+            approved=Count("pk", filter=Q(status=Appointment.Status.APPROVED)),
+            rejected=Count("pk", filter=Q(status=Appointment.Status.REJECTED)),
+            cancelled=Count("pk", filter=Q(status=Appointment.Status.CANCELLED)),
+            completed=Count("pk", filter=Q(status=Appointment.Status.COMPLETED)),
+            no_show=Count("pk", filter=Q(status=Appointment.Status.NO_SHOW)),
+        ).order_by("slot__date")
+        return Response(
+            {
+                "month": month_str,
+                "days": [
+                    {"date": row.pop("slot__date").isoformat(), **row}
+                    for row in days
+                ],
+            }
+        )
     
 class AdminSlotDetailView(generics.RetrieveUpdateDestroyAPIView):
     """Admin view to retrieve, update, or delete a specific slot."""

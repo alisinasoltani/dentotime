@@ -1,11 +1,26 @@
 """Views for the accounts application."""
 
+from datetime import datetime, timedelta, timezone as datetime_timezone
+
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Avg, BooleanField, Count, Exists, FloatField, OuterRef, Prefetch, Value
+from django.db.models import (
+    Avg,
+    BooleanField,
+    Count,
+    DateTimeField,
+    Exists,
+    F,
+    FloatField,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    Value,
+)
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -33,7 +48,7 @@ from .permissions import IsAdminRole, IsDoctorRole, IsNormalUser
 from .serializers import (
     LoginSerializer, SignupSerializer, UserDetailSerializer,
     UserProfileSerializer, PasswordChangeSerializer,
-    AdminUserListSerializer, AdminDoctorListSerializer,
+    AdminUserListSerializer, AdminDoctorListSerializer, AdminDoctorDetailSerializer,
     DoctorVerificationStatusSerializer, DoctorVerificationSubmitSerializer,
     DoctorReviewSerializer, PublicDoctorListSerializer, PublicDoctorDetailSerializer,
     RatingVoterSerializer,
@@ -42,6 +57,8 @@ from .serializers import (
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from .throttles import LoginThrottle, SignupThrottle
 from core.sms_service import send_doctor_approved, send_doctor_rejected, send_admin_alert
+from appointments.models import Appointment
+from messaging.models import Message, ThreadReadState
 from .sessions import set_password_and_revoke
 
 
@@ -230,7 +247,7 @@ class AdminUserListView(ListAPIView):
     permission_classes = (IsAdminRole,)
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ["username", "phone_number", "first_name", "last_name"]
-    ordering_fields = ["date_joined", "username"]
+    ordering_fields = ["date_joined", "username", "first_name"]
     
     def get_queryset(self):
         # Querying NormalUser automatically JOINs the User table via MTI.
@@ -243,19 +260,96 @@ class AdminDoctorListView(ListAPIView):
     permission_classes = (IsAdminRole,)
     filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ["username", "phone_number", "first_name", "last_name"]
-    ordering_fields = ["date_joined", "verification_status"]
+    ordering_fields = [
+        "date_joined",
+        "verification_status",
+        "verification_submitted_at",
+        "verification_reviewed_at",
+        "first_name",
+        "username",
+    ]
     
     def get_queryset(self):
         qs = Doctor.objects.annotate(
             average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=FloatField()),
             vote_count=Count("reviews", distinct=True),
-        ).prefetch_related(
-            Prefetch("documents", queryset=DoctorDocument.objects.select_related("asset"))
         )
         status = self.request.query_params.get("verification_status")
         if status:
             qs = qs.filter(verification_status=status)
         return qs.order_by("-date_joined", "pk")
+
+
+class AdminDoctorDetailView(generics.RetrieveAPIView):
+    serializer_class = AdminDoctorDetailSerializer
+    permission_classes = (IsAdminRole,)
+
+    def get_queryset(self):
+        return Doctor.objects.annotate(
+            average_rating=Coalesce(
+                Avg("reviews__rating"), Value(0.0), output_field=FloatField()
+            ),
+            vote_count=Count("reviews", distinct=True),
+        ).prefetch_related(
+            Prefetch(
+                "documents", queryset=DoctorDocument.objects.select_related("asset")
+            )
+        )
+
+
+class AdminDashboardSummaryView(APIView):
+    """Return dashboard counters without serializing any list resources."""
+
+    permission_classes = (IsAdminRole,)
+
+    def get(self, request):
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        epoch = datetime(1970, 1, 1, tzinfo=datetime_timezone.utc)
+        read_at = ThreadReadState.objects.filter(
+            thread_id=OuterRef("thread_id"), user=request.user
+        ).values("last_read_at")[:1]
+        unread_messages = (
+            Message.objects.filter(
+                thread__deleted_at__isnull=True,
+                is_deleted=False,
+                visibility=Message.Visibility.PARTICIPANTS,
+            )
+            .exclude(sender=request.user)
+            .annotate(
+                _read_at=Coalesce(
+                    Subquery(read_at, output_field=DateTimeField()),
+                    Value(epoch, output_field=DateTimeField()),
+                )
+            )
+            .filter(created_at__gt=F("_read_at"))
+            .count()
+        )
+        doctor_counts = Doctor.objects.aggregate(
+            approved=Count(
+                "pk",
+                filter=Q(verification_status=Doctor.VerificationStatus.APPROVED),
+            ),
+            pending=Count(
+                "pk",
+                filter=Q(verification_status=Doctor.VerificationStatus.PENDING),
+            ),
+            recent_verifications=Count(
+                "pk", filter=Q(verification_submitted_at__gte=seven_days_ago)
+            ),
+        )
+        return Response(
+            {
+                "users": NormalUser.objects.count(),
+                "doctors_approved": doctor_counts["approved"],
+                "doctors_pending": doctor_counts["pending"],
+                "unread_messages": unread_messages,
+                "recent_verifications": doctor_counts["recent_verifications"],
+                "recent_appointments": Appointment.objects.filter(
+                    created_at__gte=seven_days_ago
+                ).count(),
+                "window_days": 7,
+            }
+        )
 
 
 class AdminUserDeactivateView(APIView):
@@ -470,6 +564,38 @@ class PublicDoctorListView(generics.ListAPIView):
             average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=FloatField()),
             vote_count=Count("reviews", distinct=True),
         ).order_by("pk")
+
+
+class PublicDoctorPreviewView(APIView):
+    """Return exactly the lightweight fields needed by the home-page preview."""
+
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+
+    def get(self, request):
+        doctors = list(
+            Doctor.objects.filter(
+                verification_status=Doctor.VerificationStatus.APPROVED,
+                is_active=True,
+            )
+            .only(
+                "id",
+                "first_name",
+                "last_name",
+                "account_owner",
+                "clinic_name",
+                "profile_picture",
+            )
+            .annotate(
+                likes_count=Count("likes", distinct=True),
+                average_rating=Coalesce(
+                    Avg("reviews__rating"), Value(0.0), output_field=FloatField()
+                ),
+                vote_count=Count("reviews", distinct=True),
+            )
+            .order_by("pk")[:4]
+        )
+        return Response(PublicDoctorListSerializer(doctors, many=True).data)
 
 class PublicDoctorDetailView(generics.RetrieveAPIView):
     """جزئیات عمومی یک دکتر همراه با نظرات کاربران"""

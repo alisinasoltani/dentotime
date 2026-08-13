@@ -155,7 +155,6 @@ class AdminUserListSerializer(serializers.ModelSerializer):
 
 class AdminDoctorListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for admin doctor lists."""
-    documents = DoctorDocumentSerializer(many=True, read_only=True)
     average_rating = serializers.FloatField(read_only=True)
     vote_count = serializers.IntegerField(read_only=True)
     class Meta:
@@ -163,8 +162,16 @@ class AdminDoctorListSerializer(serializers.ModelSerializer):
         fields = (
             "id", "phone_number", "username", "first_name", "last_name", 
             "is_active", "verification_status", "account_owner", "date_joined",
-            "documents", "average_rating", "vote_count"
+            "verification_submitted_at", "verification_reviewed_at",
+            "average_rating", "vote_count"
         )
+
+
+class AdminDoctorDetailSerializer(AdminDoctorListSerializer):
+    documents = DoctorDocumentSerializer(many=True, read_only=True)
+
+    class Meta(AdminDoctorListSerializer.Meta):
+        fields = (*AdminDoctorListSerializer.Meta.fields, "documents")
 
 
 class DoctorVerificationStatusSerializer(serializers.ModelSerializer):
