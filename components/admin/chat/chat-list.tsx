@@ -1,198 +1,231 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { getThreads, deleteThreadApi } from "@/lib/chat";
-import { ChatThread } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight, MoreVertical, Search, Trash2 } from "lucide-react";
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MoreVertical, Search, Trash2, ArrowRight } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
+import { deleteThreadApi, getThreadsPage } from "@/lib/chat";
+import type { ChatThread } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
-interface ChatListProps {
-    onSelectThread: (thread: ChatThread) => void;
-    activeThreadId: string | null;
-    onBack?: () => void;
-}
 
-export default function ChatList({ onSelectThread, activeThreadId, onBack }: ChatListProps) {
-    const [threads, setThreads] = useState<ChatThread[]>([]);
-    const [search, setSearch] = useState("");
-    const [debouncedSearch, setDebouncedSearch] = useState("");
-    const [activeCategory, setActiveCategory] = useState<'all' | 'unread' | 'doctors' | 'users'>('all');
+type Category = "all" | "unread" | "doctors" | "users";
 
-    useEffect(() => {
-        const handler = setTimeout(() => setDebouncedSearch(search), 500);
-        return () => clearTimeout(handler);
-    }, [search]);
+export default function AdminChatList({
+  onSelectThread,
+  activeThreadId,
+  onBack,
+}: {
+  onSelectThread: (thread: ChatThread) => void;
+  activeThreadId: string | null;
+  onBack?: () => void;
+}) {
+  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [nextPage, setNextPage] = useState<string | null>(null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [activeCategory, setActiveCategory] = useState<Category>("all");
 
-    const fetchThreads = useCallback(async () => {
-        try {
-            const data = await getThreads(debouncedSearch);
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedSearch(search), 350);
+    return () => window.clearTimeout(timeout);
+  }, [search]);
 
-            let filteredData = data;
-            if (debouncedSearch.trim() !== "") {
-                filteredData = data.filter((thread: any) => {
-                    const p = thread.participant || {};
-                    const fullName = `${p.first_name || ""} ${p.last_name || ""}`.toLowerCase();
-                    return fullName.includes(debouncedSearch.toLowerCase());
-                });
-            }
+  const refresh = useCallback(async () => {
+    try {
+      const page = await getThreadsPage(debouncedSearch);
+      setThreads(page.results);
+      setNextPage(page.next);
+    } catch (error) {
+      console.error("Unable to load conversations", error);
+    }
+  }, [debouncedSearch]);
 
-            setThreads(filteredData);
-        } catch (err) {
-            console.error("Failed to fetch threads", err);
+  useEffect(() => {
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 5000);
+    return () => window.clearInterval(interval);
+  }, [refresh]);
+
+  const loadMore = async () => {
+    if (!nextPage || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const page = await getThreadsPage(undefined, nextPage);
+      setThreads((current) => {
+        const merged = new Map(current.map((thread) => [thread.id, thread]));
+        page.results.forEach((thread) => merged.set(thread.id, thread));
+        return [...merged.values()];
+      });
+      setNextPage(page.next);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  const visibleThreads = useMemo(
+    () =>
+      threads.filter((thread) => {
+        if (activeCategory === "unread") return thread.unread_count > 0;
+        if (activeCategory === "doctors") return thread.participant?.role === "DOCTOR";
+        if (activeCategory === "users") {
+          return !thread.participant || thread.participant.role === "USER";
         }
-    }, [debouncedSearch]);
+        return true;
+      }),
+    [activeCategory, threads],
+  );
 
-    useEffect(() => {
-        fetchThreads();
-        const interval = setInterval(fetchThreads, 5000);
-        return () => clearInterval(interval);
-    }, [fetchThreads]);
+  const deleteThread = async (event: React.MouseEvent, threadId: string) => {
+    event.stopPropagation();
+    await deleteThreadApi(threadId);
+    setThreads((current) => current.filter((thread) => thread.id !== threadId));
+  };
 
-    const handleDelete = async (e: React.MouseEvent, threadId: string) => {
-        e.stopPropagation();
-        try {
-            await deleteThreadApi(threadId);
-            setThreads((prev) => prev.filter((t) => t.id !== threadId));
-        } catch (err) {
-            console.error("Failed to delete thread", err);
-        }
-    };
+  const categories: { id: Category; label: string }[] = [
+    { id: "all", label: "همه" },
+    { id: "unread", label: "خوانده‌نشده" },
+    { id: "doctors", label: "پزشکان" },
+    { id: "users", label: "کاربران" },
+  ];
 
-    const categorizedThreads = useMemo(() => {
-        return threads.filter((thread: any) => {
-            const role = thread.participant?.role;
-            if (activeCategory === 'unread') return thread.unread_count > 0;
-            if (activeCategory === 'doctors') return role === 'DOCTOR';
-            if (activeCategory === 'users') return role === 'USER';
-            return true;
-        });
-    }, [threads, activeCategory]);
+  return (
+    <div className="flex h-full w-full flex-col border-l border-gray-100 bg-white md:w-87.5">
+      <div className="flex items-center gap-2 border-b border-gray-100 p-4">
+        {onBack && (
+          <button
+            type="button"
+            aria-label="بازگشت"
+            onClick={onBack}
+            className="rounded-full p-2 hover:bg-gray-100 md:hidden"
+          >
+            <ArrowRight className="h-5 w-5" />
+          </button>
+        )}
+        <h2 className="text-lg font-bold text-gray-800">گفتگوها</h2>
+      </div>
 
-    const categories = [
-        { id: 'all', label: 'همه' },
-        { id: 'unread', label: 'خوانده نشده' },
-        { id: 'doctors', label: 'پزشکان' },
-        { id: 'users', label: 'کاربران' },
-    ] as const;
-
-    return (
-        <div className="w-full md:w-87.5 h-full bg-white border-l border-gray-100 flex flex-col">
-            <div className="p-4 border-b border-gray-100 flex items-center gap-2">
-                {onBack && (
-                    <button onClick={onBack} className="md:hidden p-2 hover:bg-gray-100 rounded-full">
-                        <ArrowRight className="h-5 w-5" />
-                    </button>
-                )}
-                <h2 className="text-lg font-bold text-gray-800">گفت و گو ها</h2>
-            </div>
-
-            <div className="p-4 pb-2">
-                <div className="relative">
-                    <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input
-                        placeholder="جستجوی کاربر..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="pr-10 bg-gray-50 border-gray-200 focus:border-[#5FB4FF]"
-                    />
-                </div>
-            </div>
-
-            <div className="flex w-full justify-between gap-1 px-4 pb-2 border-b border-gray-100 overflow-x-auto scrollbar-hide">
-                {categories.map((cat) => (
-                    <button
-                        key={cat.id}
-                        onClick={() => setActiveCategory(cat.id)}
-                        className={cn(
-                            "px-4 py-2 text-xs font-bold transition-colors whitespace-nowrap border-b-2 -mb-px",
-                            activeCategory === cat.id
-                                ? "border-[#2993A3] text-[#2993A3]"
-                                : "border-transparent text-gray-500 hover:text-gray-800"
-                        )}
-                    >
-                        {cat.label}
-                    </button>
-                ))}
-            </div>
-
-            <ScrollArea className="flex-1 overflow-y-scroll">
-                {categorizedThreads.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full p-4 text-center">
-                        <p className="text-gray-400 text-sm">
-                            {debouncedSearch ? "نتیجه‌ای یافت نشد" : "گفتگویی یافت نشد"}
-                        </p>
-                        <p className="text-gray-300 text-xs mt-1">
-                            {debouncedSearch ? "عبارت دیگری را جستجو کنید" : "هنگام دریافت پیام از کاربران، اینجا نمایش داده می‌شود."}
-                        </p>
-                    </div>
-                ) : (
-                    categorizedThreads.map((thread: any) => {
-                        const otherUser = thread.participant || { first_name: "کاربر", last_name: "ناشناس", profile_picture: null, role: "USER" };
-                        const fullName = `${otherUser?.first_name || ""} ${otherUser?.last_name || ""}`.trim() || "کاربر ناشناس";
-                        const isDoctor = otherUser.role === 'DOCTOR';
-                        const avatarSrc = otherUser?.profile_picture && otherUser.profile_picture.trim() !== "" ? otherUser.profile_picture : undefined;
-
-                        return (
-                            <div key={thread.id} className="w-full">
-                                <div
-                                    onClick={() => onSelectThread(thread)}
-                                    className={cn(
-                                        "flex w-full items-center gap-3 p-3 cursor-pointer transition-colors group",
-                                        activeThreadId === thread.id ? "bg-[#F5FAFF]" : "hover:bg-gray-50"
-                                    )}
-                                >
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <button onClick={(e) => e.stopPropagation()} className="p-2 rounded-full hover:bg-gray-200 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                                                <MoreVertical className="h-4 w-4 text-black" />
-                                            </button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-full">
-                                            <DropdownMenuItem onClick={(e) => handleDelete(e, thread.id)} className="flex gap-2 text-red-500 focus:text-red-500 cursor-pointer">
-                                                <Trash2 className="h-4 w-4 ml-2" />
-                                                    حذف کامل گفتگو
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-
-                                    {thread.unread_count > 0 && (
-                                        <span className="bg-[#2993A3] text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0">
-                                            {thread.unread_count}
-                                        </span>
-                                    )}
-
-                                    <div className="flex-1 min-w-0 text-righ">
-                                        <div className="flex justify-end items-center gap-2 text-right">
-                                            <span className={cn(
-                                                "text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0",
-                                                isDoctor ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
-                                            )}>
-                                                {isDoctor ? 'پزشک' : 'کاربر'}
-                                            </span>
-                                            <h3 className="font-semibold text-gray-800 text-sm truncate text-right">
-                                                {fullName}
-                                            </h3>
-                                        </div>
-                                    </div>
-
-                                    <Avatar className="w-12 h-12 border border-gray-200 flex-shrink-0">
-                                        <AvatarImage src={avatarSrc} />
-                                        <AvatarFallback>
-                                            {otherUser?.first_name?.[0] || "?"}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                </div>
-                                <Separator className="w-full bg-gray-100" />
-                            </div>
-                        );
-                    })
-                )}
-            </ScrollArea>
+      <div className="p-4">
+        <div className="relative">
+          <Search className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="جستجوی نام یا شماره…"
+            className="pr-10"
+          />
         </div>
-    );
+      </div>
+
+      <div className="flex gap-1 overflow-x-auto border-b px-4">
+        {categories.map((category) => (
+          <button
+            type="button"
+            key={category.id}
+            onClick={() => setActiveCategory(category.id)}
+            className={cn(
+              "whitespace-nowrap border-b-2 px-3 py-2 text-xs font-bold",
+              activeCategory === category.id
+                ? "border-[#2993A3] text-[#2993A3]"
+                : "border-transparent text-gray-500",
+            )}
+          >
+            {category.label}
+          </button>
+        ))}
+      </div>
+
+      <ScrollArea className="flex-1">
+        {visibleThreads.length === 0 ? (
+          <p className="p-8 text-center text-sm text-gray-400">گفتگویی یافت نشد</p>
+        ) : (
+          visibleThreads.map((thread) => {
+            const contact = thread.participant || thread.guest_contact;
+            const name = `${contact?.first_name || "مهمان"} ${contact?.last_name || ""}`.trim();
+            const role = thread.participant?.role;
+            return (
+              <div key={thread.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onSelectThread(thread)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") onSelectThread(thread);
+                  }}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-3 p-3",
+                    activeThreadId === thread.id ? "bg-[#F5FAFF]" : "hover:bg-gray-50",
+                  )}
+                >
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label={`بایگانی گفتگوی ${name}`}
+                        onClick={(event) => event.stopPropagation()}
+                        className="rounded-full p-2 hover:bg-gray-200"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={(event) => void deleteThread(event, thread.id)}
+                        className="text-red-600"
+                      >
+                        <Trash2 className="ml-2 h-4 w-4" /> بایگانی گفتگو
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {thread.unread_count > 0 && (
+                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#2993A3] px-1 text-[10px] font-bold text-white">
+                      {thread.unread_count}
+                    </span>
+                  )}
+                  <div className="min-w-0 flex-1 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="text-[10px] text-gray-500">
+                        {role === "DOCTOR" ? "پزشک" : thread.participant ? "کاربر" : "مهمان"}
+                      </span>
+                      <h3 className="truncate text-sm font-semibold text-gray-800">{name}</h3>
+                    </div>
+                    <p className="truncate text-xs text-gray-500">{thread.last_message || "بدون پیام"}</p>
+                  </div>
+                  <Avatar className="h-12 w-12 shrink-0">
+                    <AvatarImage src={thread.participant?.profile_picture || undefined} />
+                    <AvatarFallback>{name[0] || "؟"}</AvatarFallback>
+                  </Avatar>
+                </div>
+                <Separator />
+              </div>
+            );
+          })
+        )}
+        {nextPage && (
+          <div className="p-4 text-center">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isLoadingMore}
+              onClick={() => void loadMore()}
+            >
+              {isLoadingMore ? "در حال دریافت…" : "نمایش گفتگوهای بیشتر"}
+            </Button>
+          </div>
+        )}
+      </ScrollArea>
+    </div>
+  );
 }

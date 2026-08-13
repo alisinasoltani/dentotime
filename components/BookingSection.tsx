@@ -5,7 +5,7 @@ import axios from 'axios';
 import type { AxiosResponse } from 'axios';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
+import { z } from '@/lib/zod';
 import { toast } from 'sonner';
 import {
   addMonths, subMonths, format as jFormat, startOfMonth, endOfMonth,

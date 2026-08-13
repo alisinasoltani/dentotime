@@ -23,20 +23,31 @@ export interface AuthResponse {
 
 export interface ChatThread {
   id: string;
-  participant?: User;
-  participants?: User[];
+  thread_type: 'USER_ADMIN' | 'DOCTOR_ADMIN';
+  participant: User | null;
+  guest_contact: {
+    phone_number: string;
+    first_name: string;
+    last_name: string;
+  } | null;
+  assigned_admin: User | null;
+  status: 'OPEN' | 'CLOSED' | 'ARCHIVED';
   unread_count: number;
-  last_message?: string;
+  last_message: string;
+  last_message_at: string | null;
+  created_at: string;
 }
 
 export interface ChatMessage {
-  id: string | number;
-  thread: string | number;
+  id: string;
+  thread: string;
   sender: ChatMessageSender;
-  body: string; // Changed from `content` to `body` to match your backend/components
+  sender_type: 'USER' | 'DOCTOR' | 'ADMIN' | 'GUEST';
+  body: string;
+  visibility: 'PARTICIPANTS' | 'ADMINS_ONLY';
+  is_internal_note: boolean;
   attachments: ChatAttachment[];
   created_at: string;
-  is_read?: boolean;
 }
 
 export interface DoctorDocument {
@@ -167,17 +178,18 @@ export interface ChatAttachment {
 }
 
 /** Sender can be an expanded object OR a bare id — handle both defensively (Section 6.3). */
-export type ChatMessageSender =
-  | {
-      id: string | number;
-      role: UserRole;
-      first_name?: string;
-      last_name?: string;
-      phone_number?: string;
-      profile_picture?: string | null;
-    }
-  | string
-  | number;
+export interface ChatMessageSender {
+  id: string | null;
+  role: UserRole | 'GUEST';
+  first_name: string;
+  last_name: string;
+}
+
+export interface MessageCursorPage {
+  next: string | null;
+  previous: string | null;
+  results: ChatMessage[];
+}
 
 // -----------------------------------------------------------------------------
 // File Upload (Section 7)

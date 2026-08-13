@@ -1,58 +1,69 @@
-// lib/chat.ts
 import api from "./api";
-import type { ChatThread, ChatMessage } from "./types";
+import type {
+  ChatMessage,
+  ChatThread,
+  MessageCursorPage,
+  PaginatedResponse,
+} from "./types";
+
+export type ThreadPage = PaginatedResponse<ChatThread>;
+
+export const getThreadsPage = async (
+  search?: string,
+  pageUrl?: string,
+): Promise<ThreadPage> => {
+  const response = await api.get(pageUrl || "/chat/threads/", {
+    params: pageUrl ? undefined : { search },
+  });
+  return response.data;
+};
 
 export const getThreads = async (search?: string): Promise<ChatThread[]> => {
-  const res = await api.get("/chat/threads/", { params: { search } });
-  const data = res.data;
-  // Handle both direct array and paginated response
-  return Array.isArray(data) ? data : data.results || [];
+  const page = await getThreadsPage(search);
+  return page.results;
 };
 
 export const getMessages = async (
-  threadId: string | number,
-): Promise<ChatMessage[]> => {
-  const res = await api.get(`/chat/threads/${threadId}/messages/`);
-  const data = res.data;
-  if (Array.isArray(data)) return data;
-  return data.results || [];
+  threadId: string,
+  pageUrl?: string,
+): Promise<MessageCursorPage> => {
+  const response = await api.get(
+    pageUrl || `/chat/threads/${threadId}/messages/`,
+  );
+  return response.data;
 };
 
 export const sendMessageApi = async (
   threadId: string,
   body: string,
   assetIds: string[] = [],
-) => {
-  const payload: { body?: string; asset_ids?: string[] } = {};
-
-  // فقط اگر متن داشت، کلید body را اضافه کن
-  if (body && body.trim() !== "") {
-    payload.body = body;
-  }
-
-  // اگر فایلی داشت، کلید attachments را اضافه کن
-  if (assetIds.length > 0) {
-    payload.asset_ids = assetIds;
-  }
-
-  const res = await api.post(`/chat/threads/${threadId}/messages/`, payload);
-  return res.data;
+  visibility: ChatMessage["visibility"] = "PARTICIPANTS",
+): Promise<ChatMessage> => {
+  const payload: {
+    body?: string;
+    asset_ids?: string[];
+    visibility: ChatMessage["visibility"];
+  } = { visibility };
+  if (body.trim()) payload.body = body.trim();
+  if (assetIds.length) payload.asset_ids = assetIds;
+  const response = await api.post(
+    `/chat/threads/${threadId}/messages/`,
+    payload,
+  );
+  return response.data;
 };
 
-export const markThreadRead = async (
-  threadId: string | number,
-): Promise<void> => {
+export const markThreadRead = async (threadId: string): Promise<void> => {
   await api.patch(`/chat/threads/${threadId}/read/`);
 };
 
-// تغییر مسیر به بخش ادمین
-export const deleteThreadApi = async (
-  threadId: string | number,
-): Promise<void> => {
+export const deleteThreadApi = async (threadId: string): Promise<void> => {
   await api.delete(`/admin/chat/threads/${threadId}/`);
 };
 
 export async function getOrCreateThread(): Promise<ChatThread> {
-  const res = await api.post<ChatThread>("/chat/threads/get_or_create/");
-  return res.data;
+  const response = await api.post<ChatThread>(
+    "/chat/threads/get_or_create/",
+  );
+  return response.data;
 }

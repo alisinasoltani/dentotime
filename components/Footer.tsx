@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
+import { z } from '@/lib/zod';
 import { MapPin, AtSign, Smartphone, AlertCircle, ChevronDown } from 'lucide-react';
 import Image from 'next/image';
 import { toast } from 'sonner';
