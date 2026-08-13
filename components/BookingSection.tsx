@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -44,6 +44,7 @@ export default function BookingSection() {
   const [isLoadingSlots, setIsLoadingSlots] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
+  const idempotencyKeyRef = useRef<string | null>(null);
 
   const { register, handleSubmit, setValue, watch, formState: { errors }, reset } = useForm<BookingFormValues>({
     resolver: zodResolver(bookingSchema),
@@ -126,13 +127,18 @@ export default function BookingSection() {
       }
 
       // ارسال به مسیر مهمان (guest)
-      await api.post('/appointments/guest/', {
-        slot_id: selectedSlotId,
-        phone_number: formattedPhone,
-        first_name: data.first_name,
-        last_name: data.last_name,
-        reason: data.service // فیلد سرویس به عنوان دلیل مراجعه ارسال می‌شود
-      });
+      idempotencyKeyRef.current ??= crypto.randomUUID();
+      await api.post(
+        '/appointments/guest/',
+        {
+          slot_id: selectedSlotId,
+          phone_number: formattedPhone,
+          first_name: data.first_name,
+          last_name: data.last_name,
+          reason: data.service,
+        },
+        { headers: { 'Idempotency-Key': idempotencyKeyRef.current } },
+      );
 
       // پیام موفقیت آمیز بودن
       toast.success("رزرو نوبت موفقیت آمیز بود. برای پیگیری درخواست خود لطفا با همین شماره همراه وارد حساب کاربری خود شده، یا اگر حساب کاربری ندارید، با همین شماره همراه حساب خود را بسازید.", {
@@ -146,6 +152,7 @@ export default function BookingSection() {
       reset({ service: SERVICES[0], first_name: "", last_name: "", phone_number: "", time: "", date: "" });
       setSelectedDateObj(null);
       setSelectedSlotId(null);
+      idempotencyKeyRef.current = null;
 
     } catch (err: any) {
       const errMsg = err.response?.data?.detail || "خطا در ثبت نوبت. لطفا دوباره تلاش کنید.";

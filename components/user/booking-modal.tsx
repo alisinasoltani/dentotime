@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -51,6 +51,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [selectedSlotId, setSelectedSlotId] = useState<number | null>(null);
+    const idempotencyKeyRef = useRef<string | null>(null);
 
     const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<BookingFormValues>({
         resolver: zodResolver(bookingSchema),
@@ -158,16 +159,19 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
 
         setIsSubmitting(true);
         try {
-            await api.post('/appointments/', {
-                slot_id: selectedSlotId,
-                reason: data.service
-            });
+            idempotencyKeyRef.current ??= crypto.randomUUID();
+            await api.post(
+                '/appointments/',
+                { slot_id: selectedSlotId, reason: data.service },
+                { headers: { 'Idempotency-Key': idempotencyKeyRef.current } },
+            );
 
             toast.success("نوبت شما با موفقیت ثبت شد! منتظر تایید ادمین باشید.");
 
             reset({ fullName: data.fullName, phone: data.phone, service: SERVICES[0], date: "", time: "" });
             setSelectedDateObj(null);
             setSelectedSlotId(null);
+            idempotencyKeyRef.current = null;
             onSuccess();
             onClose();
         } catch (err: any) {
