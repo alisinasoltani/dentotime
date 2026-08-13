@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Route } from "@playwright/test";
 
 test.beforeEach(({ browserName }) => {
   test.skip(browserName !== "chromium", "Performance budgets are normalized in Chromium CI.");
