@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.postgres",
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
@@ -255,6 +256,7 @@ OTP_IP_RATE_LIMIT = int(os.getenv("OTP_IP_RATE_LIMIT", "10"))
 OTP_DEVICE_RATE_LIMIT = int(os.getenv("OTP_DEVICE_RATE_LIMIT", "5"))
 SMS_CONNECT_TIMEOUT_SECONDS = float(os.getenv("SMS_CONNECT_TIMEOUT_SECONDS", "2"))
 SMS_READ_TIMEOUT_SECONDS = float(os.getenv("SMS_READ_TIMEOUT_SECONDS", "5"))
+AVAILABILITY_MAX_RANGE_DAYS = int(os.getenv("AVAILABILITY_MAX_RANGE_DAYS", "62"))
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = IS_PRODUCTION

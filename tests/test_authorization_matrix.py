@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import time, timedelta
 from typing import Callable
 
 import pytest
@@ -10,7 +10,14 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import Doctor, NormalUser, User
-from appointments.models import Appointment, AppointmentSlot
+from appointments.models import (
+    Appointment,
+    AppointmentSlot,
+    AvailabilityBreak,
+    AvailabilityOverride,
+    ClinicSchedule,
+    WeeklyAvailabilityRule,
+)
 from messaging.models import MessageThread
 
 
@@ -91,6 +98,23 @@ def authorization_context(db):
         participant=other_patient,
         thread_type=MessageThread.ThreadType.USER_ADMIN,
     )
+    clinic_schedule = ClinicSchedule.objects.create(pk=1)
+    availability_rule = WeeklyAvailabilityRule.objects.create(
+        schedule=clinic_schedule,
+        weekday=0,
+        start_time=time(9),
+        end_time=time(12),
+    )
+    availability_break = AvailabilityBreak.objects.create(
+        rule=availability_rule,
+        start_time=time(10),
+        end_time=time(10, 30),
+    )
+    availability_override = AvailabilityOverride.objects.create(
+        schedule=clinic_schedule,
+        date=(starts_at + timedelta(days=20)).date(),
+        kind=AvailabilityOverride.Kind.CLOSED,
+    )
 
     return {
         "patient": patient,
@@ -104,6 +128,9 @@ def authorization_context(db):
         "other_appointment": other_appointment,
         "thread": thread,
         "other_thread": other_thread,
+        "availability_rule": availability_rule,
+        "availability_break": availability_break,
+        "availability_override": availability_override,
     }
 
 
@@ -232,6 +259,25 @@ ENDPOINTS = (
         lambda c: f"/api/v1/admin/appointments/slots/{c['slot'].pk}/",
         frozenset({"admin"}),
     ),
+    EndpointCase("availability_rules_get", "get", lambda c: "/api/v1/admin/appointments/availability/rules/", frozenset({"admin"})),
+    EndpointCase("availability_rules_post", "post", lambda c: "/api/v1/admin/appointments/availability/rules/", frozenset({"admin"})),
+    EndpointCase("availability_rule_get", "get", lambda c: f"/api/v1/admin/appointments/availability/rules/{c['availability_rule'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_rule_patch", "patch", lambda c: f"/api/v1/admin/appointments/availability/rules/{c['availability_rule'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_rule_put", "put", lambda c: f"/api/v1/admin/appointments/availability/rules/{c['availability_rule'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_rule_delete", "delete", lambda c: f"/api/v1/admin/appointments/availability/rules/{c['availability_rule'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_breaks_get", "get", lambda c: "/api/v1/admin/appointments/availability/breaks/", frozenset({"admin"})),
+    EndpointCase("availability_breaks_post", "post", lambda c: "/api/v1/admin/appointments/availability/breaks/", frozenset({"admin"})),
+    EndpointCase("availability_break_get", "get", lambda c: f"/api/v1/admin/appointments/availability/breaks/{c['availability_break'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_break_patch", "patch", lambda c: f"/api/v1/admin/appointments/availability/breaks/{c['availability_break'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_break_put", "put", lambda c: f"/api/v1/admin/appointments/availability/breaks/{c['availability_break'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_break_delete", "delete", lambda c: f"/api/v1/admin/appointments/availability/breaks/{c['availability_break'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_overrides_get", "get", lambda c: "/api/v1/admin/appointments/availability/overrides/", frozenset({"admin"})),
+    EndpointCase("availability_overrides_post", "post", lambda c: "/api/v1/admin/appointments/availability/overrides/", frozenset({"admin"})),
+    EndpointCase("availability_override_get", "get", lambda c: f"/api/v1/admin/appointments/availability/overrides/{c['availability_override'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_override_patch", "patch", lambda c: f"/api/v1/admin/appointments/availability/overrides/{c['availability_override'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_override_put", "put", lambda c: f"/api/v1/admin/appointments/availability/overrides/{c['availability_override'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_override_delete", "delete", lambda c: f"/api/v1/admin/appointments/availability/overrides/{c['availability_override'].pk}/", frozenset({"admin"})),
+    EndpointCase("availability_generate", "post", lambda c: "/api/v1/admin/appointments/availability/generate/", frozenset({"admin"})),
     EndpointCase("admin_appointments", "get", lambda c: "/api/v1/admin/appointments/", frozenset({"admin"})),
     EndpointCase(
         "admin_appointment_patch",

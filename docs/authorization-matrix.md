@@ -37,6 +37,7 @@ This policy is enforced by backend authentication, role permissions, and object-
 | System settings update | PATCH | No | No | No | No | Yes |
 | User/doctor administration | GET/PATCH/POST | No | No | No | No | Yes |
 | Appointment-slot administration | GET/POST/PUT/PATCH/DELETE | No | No | No | No | Yes |
+| Clinic availability rules, breaks, overrides, and generation | GET/POST/PUT/PATCH/DELETE | No | No | No | No | Yes |
 | Appointment administration/calendar | GET/PUT/PATCH | No | No | No | No | Yes |
 | Thread administration | GET/PUT/PATCH/DELETE | No | No | No | No | Yes |
 

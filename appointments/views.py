@@ -1,17 +1,28 @@
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 from rest_framework.filters import SearchFilter, OrderingFilter
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from rest_framework.permissions import AllowAny
 
 from accounts.models import NormalUser
 from accounts.permissions import IsNormalUser, IsAdminRole
-from .models import AppointmentSlot, Appointment
+from .availability import clinic_today, generate_availability, validate_date_range
+from .models import (
+    AppointmentSlot,
+    Appointment,
+    AvailabilityBreak,
+    AvailabilityOverride,
+    WeeklyAvailabilityRule,
+)
 from .serializers import (
     AppointmentSlotSerializer, AppointmentCreateSerializer, AppointmentListSerializer,
-    AppointmentCancelSerializer, AdminAppointmentUpdateSerializer, GuestAppointmentCreateSerializer
+    AppointmentCancelSerializer, AdminAppointmentUpdateSerializer, GuestAppointmentCreateSerializer,
+    AvailabilityBreakSerializer, AvailabilityGenerationSerializer,
+    AvailabilityOverrideSerializer, WeeklyAvailabilityRuleSerializer,
 )
 from .services import (
     CancellationNotAllowed,
@@ -24,20 +35,35 @@ from .services import (
     transition_appointment,
 )
 
+
+def requested_date_range(request, *, default_days=31):
+    today = clinic_today()
+    raw_start = request.query_params.get("start_date")
+    raw_end = request.query_params.get("end_date")
+    try:
+        start_date = datetime.strptime(raw_start, "%Y-%m-%d").date() if raw_start else today
+        end_date = (
+            datetime.strptime(raw_end, "%Y-%m-%d").date()
+            if raw_end
+            else start_date + timedelta(days=default_days - 1)
+        )
+    except ValueError as exc:
+        raise ValidationError({"detail": "Dates must use YYYY-MM-DD."}) from exc
+    validate_date_range(start_date, end_date)
+    return start_date, end_date
+
 class SlotListView(generics.ListAPIView):
     serializer_class = AppointmentSlotSerializer
     permission_classes = [AllowAny]
     authentication_classes = []
     
     def get_queryset(self):
-        qs = AppointmentSlot.objects.filter(status=AppointmentSlot.Status.AVAILABLE)
-        start_date = self.request.query_params.get("start_date")
-        end_date = self.request.query_params.get("end_date")
-        if start_date:
-            qs = qs.filter(date__gte=start_date)
-        if end_date:
-            qs = qs.filter(date__lte=end_date)
-        return qs.order_by("start_at")
+        start_date, end_date = requested_date_range(self.request)
+        return AppointmentSlot.objects.filter(
+            status=AppointmentSlot.Status.AVAILABLE,
+            date__range=(start_date, end_date),
+            start_at__gt=timezone.now(),
+        ).order_by("start_at", "capacity_index")
 
 
 class AdminSlotListCreateView(generics.ListCreateAPIView):
@@ -46,14 +72,76 @@ class AdminSlotListCreateView(generics.ListCreateAPIView):
     permission_classes = (IsAdminRole,)
 
     def get_queryset(self):
-        qs = AppointmentSlot.objects.all()
-        start_date = self.request.query_params.get("start_date")
-        end_date = self.request.query_params.get("end_date")
-        if start_date:
-            qs = qs.filter(date__gte=start_date)
-        if end_date:
-            qs = qs.filter(date__lte=end_date)
-        return qs.order_by("start_at")
+        start_date, end_date = requested_date_range(self.request)
+        return AppointmentSlot.objects.filter(
+            date__range=(start_date, end_date)
+        ).order_by("start_at", "capacity_index")
+
+
+class WeeklyAvailabilityRuleListCreateView(generics.ListCreateAPIView):
+    serializer_class = WeeklyAvailabilityRuleSerializer
+    permission_classes = (IsAdminRole,)
+    queryset = WeeklyAvailabilityRule.objects.order_by("weekday", "start_time", "pk")
+
+
+class WeeklyAvailabilityRuleDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = WeeklyAvailabilityRuleSerializer
+    permission_classes = (IsAdminRole,)
+    queryset = WeeklyAvailabilityRule.objects.all()
+
+
+class AvailabilityBreakListCreateView(generics.ListCreateAPIView):
+    serializer_class = AvailabilityBreakSerializer
+    permission_classes = (IsAdminRole,)
+
+    def get_queryset(self):
+        queryset = AvailabilityBreak.objects.select_related("rule").order_by(
+            "rule__weekday", "start_time", "pk"
+        )
+        if rule_id := self.request.query_params.get("rule"):
+            queryset = queryset.filter(rule_id=rule_id)
+        return queryset
+
+
+class AvailabilityBreakDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = AvailabilityBreakSerializer
+    permission_classes = (IsAdminRole,)
+    queryset = AvailabilityBreak.objects.select_related("rule")
+
+
+class AvailabilityOverrideListCreateView(generics.ListCreateAPIView):
+    serializer_class = AvailabilityOverrideSerializer
+    permission_classes = (IsAdminRole,)
+    queryset = AvailabilityOverride.objects.order_by("date", "pk")
+
+
+class AvailabilityOverrideDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = AvailabilityOverrideSerializer
+    permission_classes = (IsAdminRole,)
+    queryset = AvailabilityOverride.objects.all()
+
+
+class AvailabilityGenerateView(APIView):
+    permission_classes = (IsAdminRole,)
+
+    def post(self, request):
+        serializer = AvailabilityGenerationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        start_date = serializer.validated_data["start_date"]
+        end_date = serializer.validated_data["end_date"]
+        validate_date_range(start_date, end_date)
+        if start_date < clinic_today():
+            raise ValidationError({"start_date": "Past availability cannot be generated."})
+        result = generate_availability(start_date=start_date, end_date=end_date)
+        return Response(
+            {
+                "timezone": "Asia/Tehran",
+                "created": result.created,
+                "updated": result.updated,
+                "removed": result.removed,
+                "total": result.total,
+            }
+        )
 
 
 class AppointmentCreateView(APIView):
