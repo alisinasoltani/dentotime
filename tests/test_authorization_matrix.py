@@ -318,7 +318,10 @@ def test_public_endpoints_are_anonymous(authorization_context):
 
     for method, url, data in public_requests:
         response = getattr(client, method)(url, data, format="json")
-        assert response.status_code not in {401, 403}, (method, url, response.status_code)
+        if url == "/api/v1/auth/token/refresh/":
+            assert response.status_code == 401
+        else:
+            assert response.status_code not in {401, 403}, (method, url, response.status_code)
 
 
 @pytest.mark.django_db

@@ -36,6 +36,7 @@ jobs:
       DEBUG: "False"
       SECRET_KEY: ci-django-secret-key-that-is-not-used-outside-ci
       JWT_SIGNING_KEY: ci-jwt-signing-key-that-is-different-from-django
+      OTP_HASH_KEY: ci-otp-hash-key-that-is-different-from-other-keys
       ALLOWED_HOSTS: testserver,localhost,127.0.0.1
       CORS_ALLOWED_ORIGINS: http://localhost:3000
       CSRF_TRUSTED_ORIGINS: http://localhost:3000

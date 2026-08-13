@@ -1,8 +1,11 @@
 """Views for the accounts application."""
 
-import random
+from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -14,11 +17,16 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
-from .models import User, NormalUser, Doctor, DoctorReview
-from accounts.models import User, OTPCode
-from django.db.models import Count
+from .models import User, NormalUser, Doctor, DoctorReview, OTPChallenge
+from .otp import (
+    GENERIC_REQUEST_MESSAGE,
+    GENERIC_VERIFY_ERROR,
+    consume_grant,
+    create_challenge,
+    verify_challenge,
+)
 from .permissions import IsAdminRole, IsDoctorRole, IsNormalUser
 from .serializers import (
     LoginSerializer, SignupSerializer, UserDetailSerializer,
@@ -28,12 +36,10 @@ from .serializers import (
     DoctorReviewSerializer, PublicDoctorListSerializer, PublicDoctorDetailSerializer
 )
 
-from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from .throttles import LoginThrottle, SignupThrottle
-from core.sms_service import send_otp
-from django.core.cache import cache
-from django.utils import timezone
 from core.sms_service import send_doctor_approved, send_doctor_rejected, send_admin_alert
+from .sessions import set_password_and_revoke
 
 
 User = get_user_model()
@@ -44,10 +50,12 @@ def get_tokens_for_user(user: User) -> dict[str, str]:
     refresh = RefreshToken.for_user(user)
     refresh["role"] = user.role
     refresh["user_type"] = user.role
+    refresh["auth_version"] = user.auth_version
     
     access_token = refresh.access_token
     access_token["role"] = user.role
     access_token["user_type"] = user.role
+    access_token["auth_version"] = user.auth_version
 
     return {
         "refresh": str(refresh),
@@ -55,8 +63,29 @@ def get_tokens_for_user(user: User) -> dict[str, str]:
     }
 
 
+def set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    response.set_cookie(
+        settings.REFRESH_COOKIE_NAME,
+        refresh_token,
+        max_age=int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds()),
+        httponly=True,
+        secure=settings.REFRESH_COOKIE_SECURE,
+        samesite=settings.REFRESH_COOKIE_SAMESITE,
+        path=settings.REFRESH_COOKIE_PATH,
+    )
+
+
+def clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        settings.REFRESH_COOKIE_NAME,
+        path=settings.REFRESH_COOKIE_PATH,
+        samesite=settings.REFRESH_COOKIE_SAMESITE,
+    )
+
+
 class SignupView(APIView):
     permission_classes = (AllowAny,)
+    throttle_classes = (SignupThrottle,)
 
     def post(self, request: Request) -> Response:
         serializer = SignupSerializer(data=request.data)
@@ -66,15 +95,16 @@ class SignupView(APIView):
             # تولید توکن JWT برای ورود خودکار کاربر
             tokens = get_tokens_for_user(user)
             
-            return Response(
+            response = Response(
                 {
                     "message": "User registered successfully.",
                     "access": tokens["access"],
-                    "refresh": tokens["refresh"],
                     "user": UserDetailSerializer(user).data,
                 },
                 status=status.HTTP_201_CREATED,
             )
+            set_refresh_cookie(response, tokens["refresh"])
+            return response
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class LoginView(APIView):
@@ -116,19 +146,49 @@ class LoginView(APIView):
         user.save(update_fields=["last_login"])
 
         tokens = get_tokens_for_user(user)
-        return Response(
+        response = Response(
             {
                 "message": "Login successful.",
                 "access": tokens["access"],
-                "refresh": tokens["refresh"],
                 "user": UserDetailSerializer(user).data,
             },
             status=status.HTTP_200_OK,
         )
+        set_refresh_cookie(response, tokens["refresh"])
+        return response
 
 
-class CustomTokenRefreshView(TokenRefreshView):
-    pass
+class SessionTokenRefreshSerializer(TokenRefreshSerializer):
+    def validate(self, attrs):
+        refresh = RefreshToken(attrs["refresh"])
+        user = User.objects.filter(pk=refresh.get("user_id"), is_active=True).only(
+            "id", "auth_version"
+        ).first()
+        if user is None or refresh.get("auth_version") != user.auth_version:
+            raise InvalidToken("Session has been revoked.")
+        return super().validate(attrs)
+
+
+class CustomTokenRefreshView(APIView):
+    permission_classes = (AllowAny,)
+
+    def post(self, request):
+        raw_refresh = request.COOKIES.get(settings.REFRESH_COOKIE_NAME)
+        if not raw_refresh:
+            return Response({"detail": "Refresh session is unavailable."}, status=status.HTTP_401_UNAUTHORIZED)
+        serializer = SessionTokenRefreshSerializer(data={"refresh": raw_refresh})
+        try:
+            serializer.is_valid(raise_exception=True)
+        except (InvalidToken, TokenError):
+            response = Response({"detail": "Refresh session is invalid."}, status=status.HTTP_401_UNAUTHORIZED)
+            clear_refresh_cookie(response)
+            return response
+        payload = dict(serializer.validated_data)
+        rotated_refresh = payload.pop("refresh", None)
+        response = Response(payload, status=status.HTTP_200_OK)
+        if rotated_refresh:
+            set_refresh_cookie(response, rotated_refresh)
+        return response
 
 
 class MeView(RetrieveUpdateAPIView):
@@ -153,9 +213,12 @@ class PasswordChangeView(APIView):
         if not user.check_password(serializer.validated_data["old_password"]):
             return Response({"detail": "Wrong old password."}, status=status.HTTP_400_BAD_REQUEST)
         
-        user.set_password(serializer.validated_data["new_password"])
-        user.save()
-        return Response({"detail": "Password changed successfully."}, status=status.HTTP_200_OK)
+        with transaction.atomic():
+            locked_user = User.objects.select_for_update().get(pk=user.pk)
+            set_password_and_revoke(locked_user, serializer.validated_data["new_password"])
+        response = Response({"detail": "Password changed successfully."}, status=status.HTTP_200_OK)
+        clear_refresh_cookie(response)
+        return response
 
 
 class AdminUserListView(ListAPIView):
@@ -288,16 +351,15 @@ class LogoutView(APIView):
     permission_classes = (IsAuthenticated,)
 
     def post(self, request):
+        response = Response({"detail": "Logout successful."}, status=status.HTTP_205_RESET_CONTENT)
+        refresh_token = request.COOKIES.get(settings.REFRESH_COOKIE_NAME)
         try:
-            refresh_token = request.data.get("refresh")
-            if not refresh_token:
-                return Response({"detail": "Refresh token is required."}, status=status.HTTP_400_BAD_REQUEST)
-                
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-            return Response({"detail": "Logout successful."}, status=status.HTTP_205_RESET_CONTENT)
+            if refresh_token:
+                RefreshToken(refresh_token).blacklist()
         except TokenError:
-            return Response({"detail": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST)
+            pass
+        clear_refresh_cookie(response)
+        return response
         
         
 class RequestOTPView(APIView):
@@ -305,17 +367,20 @@ class RequestOTPView(APIView):
 
     def post(self, request):
         phone = request.data.get("phone_number")
-        if not phone:
-            return Response({"detail": "Phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        code = str(random.randint(10000, 99999))
-        # حذف کدهای قدیمی این شماره
-        OTPCode.objects.filter(phone_number=phone).delete()
-        # ذخیره کد جدید در دیتابیس
-        OTPCode.objects.create(phone_number=phone, code=code)
-        
-        send_otp(phone, code)
-        return Response({"detail": "کد تایید ارسال شد."}, status=status.HTTP_200_OK)
+        purpose = request.data.get("purpose")
+        if not phone or purpose not in OTPChallenge.Purpose.values:
+            return Response(
+                {"detail": "A valid phone number and purpose are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            challenge = create_challenge(request, phone, purpose)
+        except DjangoValidationError:
+            return Response({"detail": "A valid phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
+        payload = {"detail": GENERIC_REQUEST_MESSAGE}
+        if challenge is not None:
+            payload["challenge_id"] = str(challenge.pk)
+        return Response(payload, status=status.HTTP_202_ACCEPTED)
 
 class VerifyOTPView(APIView):
     permission_classes = (AllowAny,)
@@ -323,41 +388,58 @@ class VerifyOTPView(APIView):
     def post(self, request):
         phone = request.data.get("phone_number")
         code = request.data.get("code")
-        
-        otp_obj = OTPCode.objects.filter(phone_number=phone, code=code).first()
-        
-        if not otp_obj:
-            return Response({"detail": "کد اشتباه است."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        if not otp_obj.is_valid():
-            return Response({"detail": "کد منقضی شده است."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        otp_obj.is_verified = True
-        otp_obj.save()
-        return Response({"detail": "شماره تایید شد."}, status=status.HTTP_200_OK)
+        purpose = request.data.get("purpose")
+        challenge_id = request.data.get("challenge_id")
+        if not all((phone, code, challenge_id)) or purpose not in OTPChallenge.Purpose.values:
+            return Response({"detail": GENERIC_VERIFY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            otp_token = verify_challenge(
+                challenge_id=challenge_id,
+                raw_phone=phone,
+                purpose=purpose,
+                code=str(code),
+            )
+        except (ValueError, DjangoValidationError):
+            return Response({"detail": GENERIC_VERIFY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"detail": "Phone number verified.", "otp_token": otp_token},
+            status=status.HTTP_200_OK,
+        )
 
 class ResetPasswordView(APIView):
     permission_classes = (AllowAny,)
 
     def post(self, request):
         phone = request.data.get("phone_number")
-        code = request.data.get("code")
+        otp_token = request.data.get("otp_token")
         new_password = request.data.get("new_password")
-        
-        otp_obj = OTPCode.objects.filter(phone_number=phone, code=code).first()
-        if not otp_obj:
-            return Response({"detail": "کد اشتباه است."}, status=status.HTTP_400_BAD_REQUEST)
-        if not otp_obj.is_valid():
-            return Response({"detail": "کد منقضی شده است."}, status=status.HTTP_400_BAD_REQUEST)
-        
+        if not all((phone, otp_token, new_password)):
+            return Response({"detail": GENERIC_VERIFY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+        user = User.objects.filter(phone_number=phone).first()
         try:
-            user = User.objects.get(phone_number=phone)
-            user.set_password(new_password)
-            user.save()
-            otp_obj.delete() # حذف کد استفاده شده
-            return Response({"detail": "رمز عبور با موفقیت تغییر کرد."}, status=status.HTTP_200_OK)
-        except User.DoesNotExist:
-            return Response({"detail": "کاربری یافت نشد."}, status=status.HTTP_404_NOT_FOUND)
+            validate_password(new_password, user=user)
+        except DjangoValidationError as exc:
+            return Response({"new_password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with transaction.atomic():
+                consume_grant(
+                    token=otp_token,
+                    raw_phone=phone,
+                    purpose=OTPChallenge.Purpose.PASSWORD_RESET,
+                )
+                if user is not None:
+                    locked_user = User.objects.select_for_update().get(pk=user.pk)
+                    set_password_and_revoke(locked_user, new_password)
+        except (ValueError, DjangoValidationError):
+            return Response({"detail": GENERIC_VERIFY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+
+        response = Response(
+            {"detail": "If the account exists, its password has been changed."},
+            status=status.HTTP_200_OK,
+        )
+        clear_refresh_cookie(response)
+        return response
 
 class PublicDoctorListView(generics.ListAPIView):
     """لیست عمومی دکترهای تایید شده برای نمایش در سایت (با قابلیت جستجو)"""

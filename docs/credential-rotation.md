@@ -6,8 +6,9 @@ been performed and verified.
 
 ## Immediate rotation
 
-1. Generate a new Django `SECRET_KEY` and a separate `JWT_SIGNING_KEY` with a
-   cryptographically secure password generator.
+1. Generate a new Django `SECRET_KEY`, `JWT_SIGNING_KEY`, and `OTP_HASH_KEY`
+   with a cryptographically secure password generator. All three values must
+   be independent.
 2. Change the PostgreSQL password at the database provider, update the deployed
    `DB_PASS`, restart the application, and verify that the old password fails.
 3. Revoke and recreate the SMS.ir API key. Update `SMS_IR_API_KEY` and verify

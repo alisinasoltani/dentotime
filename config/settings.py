@@ -32,6 +32,7 @@ IS_PRODUCTION = DJANGO_ENVIRONMENT == "production"
 DEBUG = env_bool("DEBUG", default=False)
 SECRET_KEY = os.getenv("SECRET_KEY", "")
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", "")
+OTP_HASH_KEY = os.getenv("OTP_HASH_KEY", "")
 
 if not SECRET_KEY:
     raise ImproperlyConfigured("SECRET_KEY is required.")
@@ -43,6 +44,12 @@ if IS_PRODUCTION and JWT_SIGNING_KEY == SECRET_KEY:
     raise ImproperlyConfigured("JWT_SIGNING_KEY must differ from SECRET_KEY in production.")
 if not JWT_SIGNING_KEY:
     JWT_SIGNING_KEY = SECRET_KEY
+if IS_PRODUCTION and not OTP_HASH_KEY:
+    raise ImproperlyConfigured("OTP_HASH_KEY is required in production.")
+if IS_PRODUCTION and OTP_HASH_KEY in {SECRET_KEY, JWT_SIGNING_KEY}:
+    raise ImproperlyConfigured("OTP_HASH_KEY must be independent in production.")
+if not OTP_HASH_KEY:
+    OTP_HASH_KEY = SECRET_KEY
 
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", "127.0.0.1,localhost" if not IS_PRODUCTION else "")
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
@@ -188,7 +195,7 @@ MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 CORS_ALLOW_ALL_ORIGINS = not IS_PRODUCTION and env_bool("CORS_ALLOW_ALL_ORIGINS", default=False)
-CORS_ALLOW_CREDENTIALS = False
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",
@@ -197,14 +204,15 @@ CORS_ALLOW_HEADERS = [
     "dnt",
     "origin",
     "user-agent",
-    "x-csrftoken",
+        "x-csrftoken",
+        "x-device-id",
     "x-requested-with",
 ]
 CORS_ALLOW_METHODS = ["DELETE", "GET", "OPTIONS", "PATCH", "POST", "PUT"]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "accounts.authentication.SessionVersionJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
@@ -224,7 +232,7 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=10),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
@@ -232,6 +240,20 @@ SIMPLE_JWT = {
     "SIGNING_KEY": JWT_SIGNING_KEY,
     "ISSUER": os.getenv("JWT_ISSUER", "dentotime-api"),
 }
+
+REFRESH_COOKIE_NAME = os.getenv("REFRESH_COOKIE_NAME", "dentotime_refresh")
+REFRESH_COOKIE_PATH = "/api/v1/auth/"
+REFRESH_COOKIE_SECURE = IS_PRODUCTION
+REFRESH_COOKIE_SAMESITE = "Lax"
+OTP_TTL_SECONDS = int(os.getenv("OTP_TTL_SECONDS", "120"))
+OTP_GRANT_TTL_SECONDS = int(os.getenv("OTP_GRANT_TTL_SECONDS", "300"))
+OTP_MAX_ATTEMPTS = int(os.getenv("OTP_MAX_ATTEMPTS", "5"))
+OTP_RATE_WINDOW_SECONDS = int(os.getenv("OTP_RATE_WINDOW_SECONDS", "600"))
+OTP_PHONE_RATE_LIMIT = int(os.getenv("OTP_PHONE_RATE_LIMIT", "3"))
+OTP_IP_RATE_LIMIT = int(os.getenv("OTP_IP_RATE_LIMIT", "10"))
+OTP_DEVICE_RATE_LIMIT = int(os.getenv("OTP_DEVICE_RATE_LIMIT", "5"))
+SMS_CONNECT_TIMEOUT_SECONDS = float(os.getenv("SMS_CONNECT_TIMEOUT_SECONDS", "2"))
+SMS_READ_TIMEOUT_SECONDS = float(os.getenv("SMS_READ_TIMEOUT_SECONDS", "5"))
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = IS_PRODUCTION

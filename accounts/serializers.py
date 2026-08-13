@@ -5,23 +5,19 @@ from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework_simplejwt.tokens import RefreshToken
-from django.core.cache import cache
 from django.db.models import Count
 
-from .models import NormalUser, Doctor, DoctorReview, DoctorDocument, User, OTPCode
-from .validators import validate_e164_phone
+from .models import NormalUser, Doctor, DoctorReview, DoctorDocument, User, OTPChallenge
+from .otp import consume_grant
+from .validators import normalize_phone_number, validate_e164_phone
 
 User = get_user_model()
 
 
 class SignupSerializer(serializers.Serializer):
-    """Serializer for user/doctor registration."""
-    
-    USER_TYPE_CHOICES = (
-        ("USER", "Normal User"),
-        ("DOCTOR", "Doctor"),
-    )
+    """Register a new patient or doctor after a one-time signup grant."""
+
+    USER_TYPE_CHOICES = (("USER", "Normal User"), ("DOCTOR", "Doctor"))
 
     user_type = serializers.ChoiceField(choices=USER_TYPE_CHOICES)
     phone_number = serializers.CharField(validators=[validate_e164_phone])
@@ -29,56 +25,38 @@ class SignupSerializer(serializers.Serializer):
     password_confirm = serializers.CharField(write_only=True)
     first_name = serializers.CharField(max_length=150, required=True)
     last_name = serializers.CharField(max_length=150, required=True)
-    otp_code = serializers.CharField(max_length=5, required=False)
+    otp_token = serializers.CharField(write_only=True)
 
     def validate(self, attrs: dict) -> dict:
         if attrs["password"] != attrs.pop("password_confirm"):
             raise serializers.ValidationError({"password": "Passwords do not match."})
-            
-        phone = attrs.get("phone_number")
-        otp_code = attrs.get("otp_code")
-        
-        otp_obj = OTPCode.objects.filter(phone_number=phone).order_by('-created_at').first()
-        
-        if otp_code:
-            if not otp_obj or otp_obj.code != str(otp_code):
-                raise serializers.ValidationError({"otp_code": "کد تایید اشتباه است."})
-        elif not otp_obj or not otp_obj.is_verified:
-            raise serializers.ValidationError({"detail": "شماره موبایل تایید نشده است."})
-            
+        attrs["phone_number"] = normalize_phone_number(attrs["phone_number"])
         return attrs
 
+    @transaction.atomic
     def create(self, validated_data: dict):
         user_type = validated_data.pop("user_type")
         phone = validated_data.pop("phone_number")
         password = validated_data.pop("password")
-        
-        if user_type == "USER":
-            ModelClass = NormalUser
-            role = "USER"
-        elif user_type == "DOCTOR":
-            ModelClass = Doctor
-            role = "DOCTOR"
-        else:
-            raise serializers.ValidationError({"user_type": "Invalid user type."})
+        otp_token = validated_data.pop("otp_token")
+        model_class = NormalUser if user_type == "USER" else Doctor
 
-        user = ModelClass.objects.filter(phone_number=phone).first()
-        
-        if user:
-            user.set_password(password)
-            user.first_name = validated_data.get("first_name", user.first_name)
-            user.last_name = validated_data.get("last_name", user.last_name)
-            user.role = role
-            user.is_active = True  # <--- این خط اضافه شود تا کاربران غیرفعال مجدداً فعال شوند
-            user.save()
-            return user
-        else:
-            return ModelClass.objects.create_user(
-                phone_number=phone,
-                password=password,
-                role=role,
-                **validated_data
+        if User.objects.select_for_update().filter(phone_number=phone).exists():
+            raise serializers.ValidationError({"detail": "Unable to create this account."})
+        try:
+            consume_grant(
+                token=otp_token,
+                raw_phone=phone,
+                purpose=OTPChallenge.Purpose.SIGNUP,
             )
+        except ValueError as exc:
+            raise serializers.ValidationError({"otp_token": str(exc)}) from exc
+        return model_class.objects.create_user(
+            phone_number=phone,
+            password=password,
+            role=user_type,
+            **validated_data,
+        )
 
 class UserDetailSerializer(serializers.ModelSerializer):
     """Read-only serializer for returning user info."""
@@ -100,11 +78,13 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(required=True, write_only=True)
     user_type = serializers.ChoiceField(choices=USER_TYPE_CHOICES, required=True)
 
+    def validate_phone_number(self, value):
+        return normalize_phone_number(value)
+
 
 class TokenResponseSerializer(serializers.Serializer):
     """Serializer for the JWT token response (for documentation)."""
     access = serializers.CharField()
-    refresh = serializers.CharField()
     user = UserDetailSerializer()
 
 

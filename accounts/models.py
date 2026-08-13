@@ -1,5 +1,8 @@
 import uuid
+import hashlib
+import hmac
 import phonenumbers
+from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -66,6 +69,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     date_joined = models.DateTimeField(auto_now_add=True)
     last_login = models.DateTimeField(null=True, blank=True)
+    auth_version = models.PositiveIntegerField(default=1, editable=False)
 
     objects = UserManager()
 
@@ -208,16 +212,69 @@ class Admin(User):
         verbose_name = "Admin"
         verbose_name_plural = "Admins"
         
-class OTPCode(models.Model):
-    phone_number = models.CharField(max_length=20, db_index=True)
-    code = models.CharField(max_length=5)
+class OTPChallenge(models.Model):
+    class Purpose(models.TextChoices):
+        SIGNUP = "SIGNUP", "Signup"
+        PASSWORD_RESET = "PASSWORD_RESET", "Password reset"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    phone_number = models.CharField(max_length=20, validators=[validate_e164_phone])
+    purpose = models.CharField(max_length=24, choices=Purpose.choices)
+    code_digest = models.CharField(max_length=64, editable=False)
+    expires_at = models.DateTimeField()
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+    max_attempts = models.PositiveSmallIntegerField(default=5)
+    requested_ip = models.GenericIPAddressField(null=True, blank=True)
+    device_hash = models.CharField(max_length=64, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
-    is_verified = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["phone_number", "purpose", "-created_at"]),
+            models.Index(
+                fields=["expires_at"],
+                condition=models.Q(consumed_at__isnull=True),
+                name="otp_unconsumed_expiry_idx",
+            ),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["phone_number", "purpose"],
+                condition=models.Q(consumed_at__isnull=True),
+                name="one_unconsumed_otp_per_phone_purpose",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(max_attempts__gt=0),
+                name="otp_max_attempts_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(attempt_count__lte=models.F("max_attempts")),
+                name="otp_attempts_within_limit",
+            ),
+        ]
+
+    def set_code(self, code: str) -> None:
+        message = f"{self.pk}:{self.phone_number}:{self.purpose}:{code}".encode()
+        self.code_digest = hmac.new(
+            settings.OTP_HASH_KEY.encode(), message, hashlib.sha256
+        ).hexdigest()
+
+    def code_matches(self, code: str) -> bool:
+        message = f"{self.pk}:{self.phone_number}:{self.purpose}:{code}".encode()
+        candidate = hmac.new(
+            settings.OTP_HASH_KEY.encode(), message, hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(self.code_digest, candidate)
 
     def is_valid(self):
-        from django.utils import timezone
-        from datetime import timedelta
-        return timezone.now() <= self.created_at + timedelta(minutes=2)
+        return bool(
+            self.consumed_at is None
+            and self.verified_at is None
+            and self.attempt_count < self.max_attempts
+            and timezone.now() < self.expires_at
+        )
 
 class DoctorReview(models.Model):
     doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name='reviews')
