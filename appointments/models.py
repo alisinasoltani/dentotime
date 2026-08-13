@@ -23,14 +23,18 @@ class AppointmentSlot(models.Model):
     capacity_index = models.PositiveSmallIntegerField(default=1)
     generated_by_schedule = models.BooleanField(default=False)
 
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.AVAILABLE, db_index=True)
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.AVAILABLE,
+        db_index=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["start_at"]
         indexes = [
-            models.Index(fields=["date", "status"]),
-            models.Index(fields=["start_at"]),
+            models.Index(fields=["date", "start_at"], name="slot_date_start_idx"),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -253,6 +257,7 @@ class Appointment(models.Model):
         related_name="appointments",
         null=True,
         blank=True,
+        db_index=False,
     )
     slot = models.ForeignKey(AppointmentSlot, on_delete=models.PROTECT, related_name="appointments")
     idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -283,7 +288,6 @@ class Appointment(models.Model):
     class Meta:
         ordering = ["-slot__start_at"]
         indexes = [
-            models.Index(fields=["status"]),
             models.Index(
                 fields=["patient", "status", "-created_at"],
                 name="appt_patient_status_created",

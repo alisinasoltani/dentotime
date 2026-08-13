@@ -19,13 +19,14 @@ class MessageThread(models.Model):
         ARCHIVED = "ARCHIVED", "Archived"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    thread_type = models.CharField(max_length=20, choices=ThreadType.choices, db_index=True)
+    thread_type = models.CharField(max_length=20, choices=ThreadType.choices)
     participant = models.ForeignKey(
         "accounts.User",
         on_delete=models.PROTECT,
         null=True,
         blank=True,
         related_name="message_threads",
+        db_index=False,
     )
     guest_phone = models.CharField(max_length=20, blank=True, default="")
     guest_first_name = models.CharField(max_length=150, blank=True, default="")
@@ -53,10 +54,16 @@ class MessageThread(models.Model):
     class Meta:
         ordering = ("-last_message_at", "-created_at", "-id")
         indexes = [
-            models.Index(fields=("thread_type", "status", "-last_message_at")),
-            models.Index(fields=("participant", "-last_message_at")),
-            models.Index(fields=("guest_phone", "status")),
-            models.Index(fields=("deleted_at",)),
+            models.Index(
+                fields=("-last_message_at", "-created_at", "-id"),
+                condition=models.Q(deleted_at__isnull=True),
+                name="thread_active_order_idx",
+            ),
+            models.Index(
+                fields=("participant", "-last_message_at", "-created_at", "-id"),
+                condition=models.Q(deleted_at__isnull=True),
+                name="thread_participant_order_idx",
+            ),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -141,7 +148,12 @@ class Message(models.Model):
         ADMINS_ONLY = "ADMINS_ONLY", "Administrators only"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    thread = models.ForeignKey(MessageThread, on_delete=models.PROTECT, related_name="messages")
+    thread = models.ForeignKey(
+        MessageThread,
+        on_delete=models.PROTECT,
+        related_name="messages",
+        db_index=False,
+    )
     sender = models.ForeignKey(
         "accounts.User",
         on_delete=models.PROTECT,
@@ -174,7 +186,9 @@ class Message(models.Model):
         ordering = ("created_at", "id")
         indexes = [
             models.Index(fields=("thread", "-created_at", "-id")),
-            models.Index(fields=("thread", "visibility", "is_deleted", "-created_at")),
+            models.Index(
+                fields=("thread", "visibility", "is_deleted", "-created_at", "-id")
+            ),
         ]
         constraints = [
             models.CheckConstraint(
@@ -203,7 +217,7 @@ class MessageAttachment(models.Model):
         on_delete=models.PROTECT,
         related_name="message_attachment",
     )
-    is_3d_scan = models.BooleanField(default=False, db_index=True)
+    is_3d_scan = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
@@ -217,6 +231,3 @@ class MessageAttachment(models.Model):
             raise ValidationError({"asset": "Only chat-attachment assets may be used here."})
         if self.asset_id and self.asset.scope_thread_id != self.message.thread_id:
             raise ValidationError({"asset": "The asset is not scoped to this thread."})
-
-    class Meta:
-        indexes = [models.Index(fields=("is_3d_scan",))]

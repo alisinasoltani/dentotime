@@ -79,7 +79,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         indexes = [
             models.Index(fields=["role", "date_joined"]),
-            models.Index(fields=["username"]),
             models.Index(fields=["is_active"]),
         ]
 
@@ -155,7 +154,6 @@ class Doctor(User):
     class Meta:
         verbose_name = "Doctor"
         verbose_name_plural = "Doctors"
-        indexes = [models.Index(fields=["verification_status"])]
         
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
