@@ -7,6 +7,7 @@ from pathlib import PurePath
 from botocore.exceptions import BotoCoreError, ClientError
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from accounts.models import User
@@ -69,6 +70,10 @@ PURPOSE_RULES = {
 
 
 class UploadError(ValueError):
+    pass
+
+
+class UploadQuotaError(UploadError):
     pass
 
 
@@ -148,6 +153,15 @@ def create_upload_session(
             ):
                 raise UploadError("The client upload ID is already bound to a different file.")
             return expire_if_needed(existing), False
+
+        reserved_bytes = (
+            FileAsset.objects.filter(owner=owner)
+            .exclude(state__in=(FileAsset.State.FAILED, FileAsset.State.DELETED))
+            .aggregate(total=Sum("expected_size"))["total"]
+            or 0
+        )
+        if reserved_bytes + file_size > settings.FILE_UPLOAD_QUOTA_BYTES:
+            raise UploadQuotaError("The file-storage quota for this account has been exceeded.")
 
         asset = FileAsset(
             owner=owner,

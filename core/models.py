@@ -28,6 +28,7 @@ class FileAsset(models.Model):
 
     class ScanStatus(models.TextChoices):
         PENDING = "PENDING", "Pending"
+        SCANNING = "SCANNING", "Scanning"
         CLEAN = "CLEAN", "Clean"
         INFECTED = "INFECTED", "Infected"
         FAILED = "FAILED", "Failed"
@@ -79,6 +80,8 @@ class FileAsset(models.Model):
     expires_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     scanned_at = models.DateTimeField(null=True, blank=True)
+    retention_until = models.DateTimeField(null=True, blank=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     failed_reason = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -93,6 +96,11 @@ class FileAsset(models.Model):
                 condition=Q(state__in=("PENDING", "UPLOADING")),
                 name="asset_incomplete_expiry_idx",
             ),
+            models.Index(
+                fields=("retention_until",),
+                condition=Q(state__in=("AVAILABLE", "FAILED", "DELETED")),
+                name="asset_retention_idx",
+            ),
         ]
         constraints = [
             models.CheckConstraint(
@@ -102,7 +110,7 @@ class FileAsset(models.Model):
                 name="asset_state_valid",
             ),
             models.CheckConstraint(
-                condition=Q(scan_status__in=("PENDING", "CLEAN", "INFECTED", "FAILED")),
+                condition=Q(scan_status__in=("PENDING", "SCANNING", "CLEAN", "INFECTED", "FAILED")),
                 name="asset_scan_status_valid",
             ),
             models.CheckConstraint(
@@ -268,6 +276,41 @@ class UploadPart(models.Model):
                 condition=Q(size__gte=1),
                 name="upload_part_size_valid",
             ),
+        ]
+
+
+class FileAccessAudit(models.Model):
+    class Action(models.TextChoices):
+        DOWNLOAD_GRANTED = "DOWNLOAD_GRANTED", "Download granted"
+        SCAN_CLEAN = "SCAN_CLEAN", "Scan clean"
+        SCAN_REJECTED = "SCAN_REJECTED", "Scan rejected"
+        RETENTION_DELETE = "RETENTION_DELETE", "Retention delete"
+
+    id = models.BigAutoField(primary_key=True)
+    asset = models.ForeignKey(
+        FileAsset,
+        on_delete=models.PROTECT,
+        related_name="access_audits",
+    )
+    actor = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="file_access_audits",
+    )
+    action = models.CharField(max_length=24, choices=Action.choices)
+    outcome = models.CharField(max_length=16, default="SUCCESS")
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True, default="")
+    detail = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("asset", "-created_at"), name="file_audit_asset_created_idx"),
+            models.Index(fields=("actor", "-created_at"), name="file_audit_actor_created_idx"),
         ]
 
 class SystemSettings(models.Model):

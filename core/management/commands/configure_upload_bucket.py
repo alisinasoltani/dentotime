@@ -14,6 +14,20 @@ class Command(BaseCommand):
             raise CommandError("CORS_ALLOWED_ORIGINS must contain the frontend origins.")
         client = get_s3_client()
         bucket = require_bucket_name()
+        if settings.AWS_S3_SERVER_SIDE_ENCRYPTION:
+            client.put_bucket_encryption(
+                Bucket=bucket,
+                ServerSideEncryptionConfiguration={
+                    "Rules": [
+                        {
+                            "ApplyServerSideEncryptionByDefault": {
+                                "SSEAlgorithm": settings.AWS_S3_SERVER_SIDE_ENCRYPTION
+                            },
+                            "BucketKeyEnabled": False,
+                        }
+                    ]
+                },
+            )
         client.put_bucket_cors(
             Bucket=bucket,
             CORSConfiguration={

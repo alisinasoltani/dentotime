@@ -1,5 +1,6 @@
 import base64
 from functools import lru_cache
+from urllib.parse import quote
 
 import boto3
 from botocore.config import Config
@@ -47,17 +48,22 @@ def require_bucket_name():
 
 
 def begin_multipart_upload(asset):
-    response = get_s3_client().create_multipart_upload(
-        Bucket=require_bucket_name(),
-        Key=asset.storage_key,
-        ContentType=asset.claimed_mime,
-        ChecksumAlgorithm="SHA256",
-        Metadata={
+    request = {
+        "Bucket": require_bucket_name(),
+        "Key": asset.storage_key,
+        "ContentType": asset.claimed_mime,
+        "ChecksumAlgorithm": "SHA256",
+        "Metadata": {
             "asset-id": str(asset.pk),
             "owner-id": str(asset.owner_id),
             "sha256": asset.sha256,
             "purpose": asset.purpose.lower(),
         },
+    }
+    if settings.AWS_S3_SERVER_SIDE_ENCRYPTION:
+        request["ServerSideEncryption"] = settings.AWS_S3_SERVER_SIDE_ENCRYPTION
+    response = get_s3_client().create_multipart_upload(
+        **request,
     )
     return response["UploadId"]
 
@@ -125,4 +131,44 @@ def head_asset(asset):
         Bucket=require_bucket_name(),
         Key=asset.storage_key,
         ChecksumMode="ENABLED",
+    )
+
+
+def stream_asset(asset):
+    response = get_s3_client().get_object(
+        Bucket=require_bucket_name(),
+        Key=asset.storage_key,
+    )
+    return response["Body"]
+
+
+def delete_asset_object(asset):
+    return get_s3_client().delete_object(
+        Bucket=require_bucket_name(),
+        Key=asset.storage_key,
+    )
+
+
+def _safe_content_disposition(file_name):
+    cleaned = "".join(
+        character for character in file_name
+        if 32 <= ord(character) != 127 and character not in {'"', "\\", "/"}
+    ).strip() or "download"
+    ascii_name = cleaned.encode("ascii", "ignore").decode("ascii") or "download"
+    ascii_name = ascii_name[:120]
+    encoded_name = quote(cleaned, safe="")
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_name}"
+
+
+def presign_asset_download(asset):
+    return get_s3_client().generate_presigned_url(
+        "get_object",
+        Params={
+            "Bucket": require_bucket_name(),
+            "Key": asset.storage_key,
+            "ResponseContentDisposition": _safe_content_disposition(asset.original_name),
+            "ResponseContentType": "application/octet-stream",
+        },
+        ExpiresIn=settings.AWS_S3_DOWNLOAD_EXPIRY_SECONDS,
+        HttpMethod="GET",
     )

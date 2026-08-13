@@ -1,6 +1,7 @@
 from django.urls import path
 from .views import (
     FileUploadView,
+    FileAssetDownloadView,
     LegacyFileConfirmView,
     SystemSettingsView,
     UploadCompleteView,
@@ -12,6 +13,7 @@ from .views import (
 
 urlpatterns = [
     path("files/upload/", FileUploadView.as_view(), name="file_upload"),
+    path("files/assets/<uuid:pk>/download/", FileAssetDownloadView.as_view(), name="file_asset_download"),
     path("files/presign/", UploadSessionCreateView.as_view(), name="file_presign_compat"),
     path("files/confirm/", LegacyFileConfirmView.as_view(), name="file_confirm_compat"),
     path("files/uploads/", UploadSessionCreateView.as_view(), name="upload_session_create"),

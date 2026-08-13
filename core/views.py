@@ -5,6 +5,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 
 from accounts.permissions import IsActiveAuthenticated, IsAdminRole, IsDoctorOrAdmin
+from django.conf import settings
+
+from core.downloads import AssetDownloadDenied, grant_asset_download
 from core.models import FileAsset, SystemSettings, UploadSession
 from messaging.models import MessageThread
 from .serializers import (
@@ -15,6 +18,7 @@ from .serializers import (
 )
 from .uploads import (
     UploadError,
+    UploadQuotaError,
     cancel_upload,
     complete_upload,
     create_upload_session,
@@ -63,6 +67,7 @@ def _session_payload(session, completed_parts=()):
         "state": session.state,
         "asset_state": asset.state,
         "scan_status": asset.scan_status,
+        "scan_error": asset.failed_reason if asset.state == FileAsset.State.FAILED else "",
         "expires_at": session.expires_at,
         "completed_parts": [
             {
@@ -123,7 +128,12 @@ class UploadSessionCreateView(APIView):
             )
             completed = reconcile_uploaded_parts(session)
         except UploadError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            response_status = (
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+                if isinstance(exc, UploadQuotaError)
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({"detail": str(exc)}, status=response_status)
         except (BotoCoreError, ClientError):
             return Response(
                 {"detail": "Object storage is temporarily unavailable."},
@@ -215,6 +225,35 @@ class LegacyFileConfirmView(APIView):
         return Response(
             {"detail": "Storage keys cannot be confirmed. Use an owned upload session."},
             status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class FileAssetDownloadView(APIView):
+    permission_classes = (IsActiveAuthenticated,)
+
+    def post(self, request, pk):
+        asset = get_object_or_404(
+            FileAsset.objects.select_related("scope_thread", "scope_doctor"),
+            pk=pk,
+        )
+        try:
+            url = grant_asset_download(
+                asset=asset,
+                actor=request.user,
+                ip_address=request.META.get("REMOTE_ADDR"),
+                user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            )
+        except AssetDownloadDenied:
+            # Do not reveal whether a protected asset exists or merely belongs to someone else.
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        except (BotoCoreError, ClientError):
+            return Response(
+                {"detail": "Private storage is temporarily unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response(
+            {"url": url, "expires_in": settings.AWS_S3_DOWNLOAD_EXPIRY_SECONDS},
+            status=status.HTTP_200_OK,
         )
 
 
