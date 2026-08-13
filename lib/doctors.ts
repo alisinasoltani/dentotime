@@ -1,4 +1,5 @@
 import api from "./api";
+import type { PaginatedResponse } from "./types";
 
 export interface Doctor {
   id: number;
@@ -18,7 +19,7 @@ export interface Doctor {
   verification_date?: string;
   average_rating: number;
   vote_count: number;
-  documents: Array<{
+  documents?: Array<{
     asset_id: string;
     file_name: string;
     file_size: number;
@@ -31,10 +32,16 @@ export interface Doctor {
 export const getDoctorsList = async (params: {
   search?: string;
   ordering?: string;
-}) => {
+  page?: number;
+  verification_status?: Doctor["verification_status"];
+}): Promise<PaginatedResponse<Doctor>> => {
   const res = await api.get("/admin/doctors/", { params });
-  const data = res.data;
-  return Array.isArray(data) ? data : (data.results || []);
+  return res.data;
+};
+
+export const getAdminDoctorDetail = async (doctorId: number): Promise<Doctor> => {
+  const res = await api.get(`/admin/doctors/${doctorId}/`);
+  return res.data;
 };
 
 export const deactivateDoctorApi = async (userId: string, reason: string) => {

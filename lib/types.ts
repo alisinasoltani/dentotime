@@ -74,7 +74,7 @@ export interface DoctorRequest {
   processed_at?: string;
   rejection_note?: string;
   internal_admin_note?: string;
-  documents: DoctorDocument[];
+  documents?: DoctorDocument[];
 }
 
 export interface Appointment {

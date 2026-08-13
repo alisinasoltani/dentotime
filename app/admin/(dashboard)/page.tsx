@@ -18,42 +18,15 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        // محاسبه زمان ۷ روز پیش
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-        // دریافت همزمان تمام آمارها برای سرعت بالا
-        const [usersRes, docsApprovedRes, docsPendingRes, threadsRes, apptsRes] = await Promise.all([
-          api.get('/admin/users/', { params: { page_size: 1 } }),
-          api.get('/admin/doctors/', { params: { verification_status: 'APPROVED', page_size: 1 } }),
-          api.get('/admin/doctors/', { params: { verification_status: 'PENDING', page_size: 100 } }),
-          api.get('/chat/threads/', { params: { page_size: 100 } }),
-          api.get('/admin/appointments/', { params: { page_size: 100 } }),
-        ]);
-
-        // فیلتر کردن درخواست‌های احراز هویت در ۷ روز گذشته
-        const recentVerifs = (docsPendingRes.data.results || []).filter((d: any) => 
-          d.submitted_at && new Date(d.submitted_at) >= sevenDaysAgo
-        ).length;
-
-        // فیلتر کردن نوبت‌های ۷ روز گذشته
-        const recentAppts = (apptsRes.data.results || []).filter((a: any) => {
-          const dateStr = a.created_at || a.start_at;
-          return dateStr && new Date(dateStr) >= sevenDaysAgo;
-        }).length;
-
-        // محاسبه پیام‌های خوانده نشده
-        const unread = (threadsRes.data.results || []).reduce((sum: number, t: any) => 
-          sum + (t.unread_count || 0), 0
-        );
+        const { data } = await api.get('/admin/dashboard/summary/');
 
         setStats({
-          users: usersRes.data.count || 0,
-          doctorsApproved: docsApprovedRes.data.count || 0,
-          doctorsPending: docsPendingRes.data.count || 0,
-          unreadMessages: unread,
-          recentVerifications: recentVerifs,
-          recentAppointments: recentAppts,
+          users: data.users,
+          doctorsApproved: data.doctors_approved,
+          doctorsPending: data.doctors_pending,
+          unreadMessages: data.unread_messages,
+          recentVerifications: data.recent_verifications,
+          recentAppointments: data.recent_appointments,
         });
       } catch (err) {
         console.error("Failed to fetch stats", err);

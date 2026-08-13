@@ -1,4 +1,5 @@
 import api from "./api";
+import type { PaginatedResponse } from "./types";
 
 export interface User {
   id: string;
@@ -12,10 +13,10 @@ export interface User {
 export const getUsersList = async (params: {
   search?: string;
   ordering?: string;
-}) => {
+  page?: number;
+}): Promise<PaginatedResponse<User>> => {
   const res = await api.get("/admin/users/", { params });
-  const data = res.data;
-  return Array.isArray(data) ? data : (data.results || []);
+  return res.data;
 };
 
 export const deactivateUserApi = async (userId: string, reason: string) => {

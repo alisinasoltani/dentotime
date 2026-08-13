@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { getAppointments, getAppointmentsCalendar, rejectAppointmentApi } from "@/lib/appointments";
+import type { CalendarDaySummary } from "@/lib/appointments";
 import AppointmentRow from "@/components/admin/appointments/appointment-row";
 import RejectAppointmentModal from "@/components/admin/appointments/reject-appointment-modal";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ import {
   isSameDay, isToday
 } from "date-fns-jalali";
 import { cn } from "@/lib/utils";
+import { PaginationControls } from "@/components/admin/pagination-controls";
 
 // روزهای هفته شمسی
 const WEEK_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'];
@@ -27,6 +29,10 @@ const WEEK_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه'
 export default function AppointmentsPage() {
   const [activeTab, setActiveTab] = useState<"list" | "calendar">("list");
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [page, setPage] = useState(1);
+  const [count, setCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
@@ -38,23 +44,35 @@ export default function AppointmentsPage() {
 
   // Calendar States
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [calendarData, setCalendarData] = useState<Record<string, Appointment[]>>({});
+  const [calendarData, setCalendarData] = useState<Record<string, CalendarDaySummary>>({});
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<Date | null>(null);
+  const [selectedAppointments, setSelectedAppointments] = useState<Appointment[]>([]);
+  const [selectedPage, setSelectedPage] = useState(1);
+  const [selectedCount, setSelectedCount] = useState(0);
+  const [selectedHasNext, setSelectedHasNext] = useState(false);
+  const [selectedHasPrevious, setSelectedHasPrevious] = useState(false);
 
   // Debounce Search
   useEffect(() => {
-    const handler = setTimeout(() => setDebouncedSearch(search), 500);
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 500);
     return () => clearTimeout(handler);
   }, [search]);
 
   const fetchAppointments = useCallback(async () => {
     try {
-      const data = await getAppointments({ search: debouncedSearch });
-      setAppointments(data);
+      const ordering = `${order === "desc" ? "-" : ""}${sortBy === "created_at" ? "created_at" : "slot__start_at"}`;
+      const data = await getAppointments({ search: debouncedSearch, ordering, page });
+      setAppointments(data.results);
+      setCount(data.count);
+      setHasNext(Boolean(data.next));
+      setHasPrevious(Boolean(data.previous));
     } catch (err) {
       console.error(err);
     }
-  }, [debouncedSearch]);
+  }, [debouncedSearch, order, page, sortBy]);
 
   useEffect(() => {
     if (activeTab === "list") fetchAppointments();
@@ -66,13 +84,30 @@ export default function AppointmentsPage() {
       try {
         const monthStr = gFormat(currentMonth, "yyyy-MM");
         const data = await getAppointmentsCalendar(monthStr);
-        setCalendarData(data);
+        setCalendarData(Object.fromEntries(data.days.map((day) => [day.date, day])));
+        setSelectedCalendarDate(null);
       } catch (err) {
         console.error(err);
       }
     };
     fetchCal();
   }, [activeTab, currentMonth]);
+
+  useEffect(() => {
+    if (!selectedCalendarDate) {
+      setSelectedAppointments([]);
+      return;
+    }
+    const date = gFormat(selectedCalendarDate, "yyyy-MM-dd");
+    void getAppointments({ start_date: date, end_date: date, page: selectedPage })
+      .then((data) => {
+        setSelectedAppointments(data.results);
+        setSelectedCount(data.count);
+        setSelectedHasNext(Boolean(data.next));
+        setSelectedHasPrevious(Boolean(data.previous));
+      })
+      .catch((error) => console.error(error));
+  }, [selectedCalendarDate, selectedPage]);
 
   // استخراج تاریخ‌های یکتا برای فیلتر (به صورت شمسی برای نمایش)
   const uniqueDates = useMemo(() => {
@@ -131,13 +166,7 @@ export default function AppointmentsPage() {
     const prev = appointments;
 
     setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: "REJECTED", admin_notes: notes } : a));
-    setCalendarData(prev => {
-      const newData = { ...prev };
-      for (const date in newData) {
-        newData[date] = newData[date].map(a => a.id === id ? { ...a, status: "REJECTED", admin_notes: notes } : a);
-      }
-      return newData;
-    });
+    setSelectedAppointments(current => current.map(a => a.id === id ? { ...a, status: "REJECTED", admin_notes: notes } : a));
 
     setRejectTarget(null);
 
@@ -265,6 +294,13 @@ export default function AppointmentsPage() {
               ))
             )}
           </div>
+          <PaginationControls
+            count={count}
+            page={page}
+            hasNext={hasNext}
+            hasPrevious={hasPrevious}
+            onPageChange={setPage}
+          />
         </>
       )}
 
@@ -296,18 +332,19 @@ export default function AppointmentsPage() {
 
               {daysInMonth.map((date) => {
                 const dateStr = gFormat(date, "yyyy-MM-dd");
-                const dayAppts = calendarData[dateStr] || [];
+                const daySummary = calendarData[dateStr];
+                const dayTotal = daySummary?.total || 0;
                 const isFriday = getDay(date) === 5;
-                const percentage = Math.min(100, (dayAppts.length / MAX_APPOINTMENTS_PER_DAY) * 100);
+                const percentage = Math.min(100, (dayTotal / MAX_APPOINTMENTS_PER_DAY) * 100);
                 const isSelected = selectedCalendarDate && isSameDay(date, selectedCalendarDate);
 
                 return (
                   <div key={dateStr} className="relative group flex justify-center">
                     <button
-                      onClick={() => setSelectedCalendarDate(date)}
+                      onClick={() => { setSelectedPage(1); setSelectedCalendarDate(date); }}
                       className="relative w-9 aspect-square h-9 md:h-12 md:w-12 rounded-full flex items-center justify-center transition-all duration-200"
                       style={{
-                        background: dayAppts.length > 0 ? `conic-gradient(#2993A3 ${percentage}%, #E2E8F0 ${percentage}%)` : "transparent"
+                        background: dayTotal > 0 ? `conic-gradient(#2993A3 ${percentage}%, #E2E8F0 ${percentage}%)` : "transparent"
                       }}
                     >
                       <div className={cn(
@@ -332,17 +369,24 @@ export default function AppointmentsPage() {
                   نوبت‌های {jFormat(selectedCalendarDate, "yyyy-MM-dd")}
                 </h3>
                 <div className="space-y-3 max-h-[500px] overflow-y-auto pl-2">
-                  {(calendarData[gFormat(selectedCalendarDate, "yyyy-MM-dd")] || []).map(appt => (
+                  {selectedAppointments.map(appt => (
                     <AppointmentRow
                       key={appt.id}
                       appointment={appt}
-                      onReject={(id) => setRejectTarget((calendarData[gFormat(selectedCalendarDate, "yyyy-MM-dd")] || []).find(a => a.id === id) || null)}
+                      onReject={(id) => setRejectTarget(selectedAppointments.find(a => a.id === id) || null)}
                     />
                   ))}
-                  {(calendarData[gFormat(selectedCalendarDate, "yyyy-MM-dd")] || []).length === 0 && (
+                  {selectedAppointments.length === 0 && (
                     <p className="text-center text-gray-400 py-8">نوبتی برای این روز ثبت نشده است.</p>
                   )}
                 </div>
+                <PaginationControls
+                  count={selectedCount}
+                  page={selectedPage}
+                  hasNext={selectedHasNext}
+                  hasPrevious={selectedHasPrevious}
+                  onPageChange={setSelectedPage}
+                />
               </>
             ) : (
               <div className="h-full flex items-center justify-center text-gray-400">

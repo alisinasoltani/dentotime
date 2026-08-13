@@ -12,7 +12,7 @@ import { format } from "date-fns-jalali"; // برای نمایش شمسی
 interface Props {
   doctor: Doctor;
   onDeactivate: (doctor: Doctor) => void;
-  onViewDocs: (docs: Doctor["documents"], name: string) => void;
+  onViewDocs: (doctor: Doctor, name: string) => void;
   onViewRatings: (doctor: Doctor, name: string) => void;
 }
 
@@ -69,7 +69,7 @@ const DoctorRow = React.memo(({ doctor, onDeactivate, onViewDocs, onViewRatings 
           size="sm"
           className="border-gray-200 text-gray-600 hover:bg-gray-50"
           // جستجو در تمام فیلدهای احتمالی که بک‌اند ممکن است استفاده کند
-          onClick={() => onViewDocs(doctor.documents || (doctor as any).verification_documents || (doctor as any).files || [], fullName)}
+          onClick={() => onViewDocs(doctor, fullName)}
         >
           <Eye className="h-4 w-4 ml-1" />
           مشاهده مدارک

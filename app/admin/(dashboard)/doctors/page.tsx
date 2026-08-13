@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { getDoctorsList, deactivateDoctorApi, Doctor } from "@/lib/doctors";
+import { getAdminDoctorDetail, getDoctorsList, deactivateDoctorApi, Doctor } from "@/lib/doctors";
 import DoctorRow from "@/components/admin/doctors/doctor-row";
 import DeactivateDoctorModal from "@/components/admin/doctors/deactivate-doctor-modal";
 import DocumentsModal from "@/components/admin/requests/documents-modal"; // استفاده مجدد از مودال قبلی
@@ -10,10 +10,15 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PaginationControls } from "@/components/admin/pagination-controls";
 
 export default function DoctorsListPage() {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [count, setCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
   
   // Search States
   const [search, setSearch] = useState("");
@@ -30,7 +35,10 @@ export default function DoctorsListPage() {
 
   // Debounce Search
   useEffect(() => {
-    const handler = setTimeout(() => setDebouncedSearch(search), 500);
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 500);
     return () => clearTimeout(handler);
   }, [search]);
 
@@ -41,14 +49,18 @@ export default function DoctorsListPage() {
       const data = await getDoctorsList({
         search: debouncedSearch,
         ordering: orderingParam,
+        page,
       });
-      setDoctors(data);
+      setDoctors(data.results);
+      setCount(data.count);
+      setHasNext(Boolean(data.next));
+      setHasPrevious(Boolean(data.previous));
     } catch (err) {
       console.error(err);
     } finally {
       setIsLoading(false);
     }
-  }, [debouncedSearch, sortBy, order]);
+  }, [debouncedSearch, sortBy, order, page]);
 
   useEffect(() => {
     fetchDoctors();
@@ -72,8 +84,13 @@ export default function DoctorsListPage() {
     }
   };
 
-  const handleViewDocs = (docs: any[], name: string) => {
-    setDocsData({ docs, name });
+  const handleViewDocs = async (doctor: Doctor, name: string) => {
+    try {
+      const detail = await getAdminDoctorDetail(doctor.id);
+      setDocsData({ docs: detail.documents || [], name });
+    } catch (error) {
+      console.error("Unable to load doctor documents", error);
+    }
   };
 
   const OrderIcon = order === "desc" ? ArrowDown : ArrowUp;
@@ -101,7 +118,7 @@ export default function DoctorsListPage() {
         <div className="flex flex-col md:flex-row md:items-center gap-2 p-1 border rounded-lg w-full md:w-auto border-gray-200">
           <span className="text-xs text-gray-500 px-2 whitespace-nowrap">مرتب سازی:</span>
           <div className="flex gap-2 w-full">
-            <Select dir="rtl" value={sortBy} onValueChange={setSortBy}>
+            <Select dir="rtl" value={sortBy} onValueChange={(value) => { setSortBy(value); setPage(1); }}>
               {/* 4. اصلاح کلاس‌های نامعتبر تایپوگرافی (w-44 حذف و flex-1 اضافه شد) */}
               <SelectTrigger className="flex-1 text-xs border-none bg-transparent focus:ring-0">
                 <SelectValue />
@@ -109,11 +126,11 @@ export default function DoctorsListPage() {
               <SelectContent className="text-xs">
                 <SelectItem className="text-xs" value="date_joined">تاریخ ساخت حساب</SelectItem>
                 <SelectItem className="text-xs" value="first_name">نام</SelectItem>
-                <SelectItem className="text-xs" value="verification_date">تاریخ احراز هویت</SelectItem>
+                <SelectItem className="text-xs" value="verification_reviewed_at">تاریخ احراز هویت</SelectItem>
               </SelectContent>
             </Select>
             
-            <Select value={order} onValueChange={(v) => setOrder(v as "asc" | "desc")}>
+            <Select value={order} onValueChange={(v) => { setOrder(v as "asc" | "desc"); setPage(1); }}>
               {/* اصلاح w-25 نامعتبر به w-[90px] */}
               <SelectTrigger className="w-[90px] border-none bg-transparent focus:ring-0 text-xs">
                 <div className="flex items-center gap-1">
@@ -150,6 +167,14 @@ export default function DoctorsListPage() {
           ))
         )}
       </div>
+
+      <PaginationControls
+        count={count}
+        page={page}
+        hasNext={hasNext}
+        hasPrevious={hasPrevious}
+        onPageChange={setPage}
+      />
 
       {/* Modals */}
       <DeactivateDoctorModal

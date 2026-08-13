@@ -11,7 +11,7 @@ interface RequestRowProps {
   request: DoctorRequest;
   onApprove: (id: number) => void;
   onReject: (id: number) => void;
-  onViewDocs: (docs: DoctorRequest["documents"], name: string) => void;
+  onViewDocs: (request: DoctorRequest, name: string) => void;
 }
 
 const RequestRow = React.memo(({ request, onApprove, onReject, onViewDocs }: RequestRowProps) => {
@@ -82,7 +82,7 @@ const RequestRow = React.memo(({ request, onApprove, onReject, onViewDocs }: Req
           size="sm"
           className="border-gray-200 text-gray-600 hover:bg-gray-50"
           // جستجو در تمام فیلدهای احتمالی که بک‌اند ممکن است استفاده کند
-          onClick={() => onViewDocs(request.documents || (request as any).verification_documents || (request as any).files || [], fullName)}
+          onClick={() => onViewDocs(request, fullName)}
         >
           <Eye className="h-4 w-4 ml-1" />
           مشاهده مدارک

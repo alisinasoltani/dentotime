@@ -1,15 +1,38 @@
 import api from "./api";
+import type { Appointment, PaginatedResponse } from "./types";
 
-export const getAppointments = async (params: { search?: string }) => {
+export interface AppointmentQuery {
+  search?: string;
+  ordering?: string;
+  page?: number;
+  start_date?: string;
+  end_date?: string;
+  status?: string;
+}
+
+export interface CalendarDaySummary {
+  date: string;
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  cancelled: number;
+  completed: number;
+  no_show: number;
+}
+
+export const getAppointments = async (
+  params: AppointmentQuery,
+): Promise<PaginatedResponse<Appointment>> => {
   const res = await api.get("/admin/appointments/", { params });
-  const data = res.data;
-  return Array.isArray(data) ? data : (data.results || []);
+  return res.data;
 };
 
-export const getAppointmentsCalendar = async (month: string) => {
-  // month format: "2024-05"
+export const getAppointmentsCalendar = async (
+  month: string,
+): Promise<{ month: string; days: CalendarDaySummary[] }> => {
   const res = await api.get(`/admin/appointments/calendar/?month=${month}`);
-  return res.data; // { "2024-05-15": [appt1, appt2], ... }
+  return res.data;
 };
 
 export const rejectAppointmentApi = async (id: string, admin_notes: string) => {

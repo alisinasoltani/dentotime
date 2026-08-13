@@ -22,6 +22,23 @@ test('verification documents request a fresh authenticated download grant only w
   }));
   await page.route('**/api/v1/admin/doctors/**', async (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
+    if (new URL(route.request().url()).pathname.endsWith('/admin/doctors/42/')) {
+      await json(route, {
+        id: 42,
+        first_name: 'سارا',
+        last_name: 'پزشک',
+        verification_status: 'PENDING',
+        documents: [{
+          asset_id: '33333333-3333-4333-8333-333333333333',
+          file_name: 'identity.pdf',
+          file_size: 100,
+          file_content_type: 'application/pdf',
+          state: 'AVAILABLE',
+          scan_status: 'CLEAN',
+        }],
+      });
+      return;
+    }
     await json(route, {
       count: 1,
       next: null,
@@ -31,14 +48,6 @@ test('verification documents request a fresh authenticated download grant only w
         user: { id: 'doctor-1', first_name: 'سارا', last_name: 'پزشک', username: 'doctor' },
         verification_status: 'PENDING',
         submitted_at: '2026-08-13T10:00:00Z',
-        documents: [{
-          asset_id: '33333333-3333-4333-8333-333333333333',
-          file_name: 'identity.pdf',
-          file_size: 100,
-          file_content_type: 'application/pdf',
-          state: 'AVAILABLE',
-          scan_status: 'CLEAN',
-        }],
       }],
     });
   });

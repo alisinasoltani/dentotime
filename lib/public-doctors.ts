@@ -16,6 +16,11 @@ export const getPublicDoctorsList = async (search?: string): Promise<PublicDocto
   return (await getPublicDoctorsPage(search)).results;
 };
 
+export const getPublicDoctorPreview = async (): Promise<PublicDoctor[]> => {
+  const res = await api.get("/doctors/preview/");
+  return res.data;
+};
+
 export const getPublicDoctorDetail = async (id: string | number): Promise<DoctorDetail> => {
   const res = await api.get(`/doctors/${id}/`);
   return res.data;

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { getPublicDoctorsList } from '@/lib/public-doctors';
+import { getPublicDoctorPreview } from '@/lib/public-doctors';
 import { PublicDoctor } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Heart, Star, Stethoscope } from 'lucide-react';
@@ -15,8 +15,7 @@ export default function DoctorsPreview() {
   useEffect(() => {
     const fetchDoctors = async () => {
       try {
-        const data = await getPublicDoctorsList();
-        setDoctors(data.slice(0, 4)); // فقط 4 نفر در صفحه اصلی
+        setDoctors(await getPublicDoctorPreview());
       } catch (err) {
         console.error(err);
       } finally {

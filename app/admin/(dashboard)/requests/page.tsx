@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { getDoctorRequests, approveDoctorApi, rejectDoctorApi } from "@/lib/requests";
+import { getDoctorRequestDetail, getDoctorRequests, approveDoctorApi, rejectDoctorApi } from "@/lib/requests";
 import { DoctorRequest, DoctorDocument } from "@/lib/types";
 import RequestRow from "@/components/admin/requests/request-row";
 import RejectModal from "@/components/admin/requests/reject-modal";
@@ -11,17 +11,22 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ArrowUp, ArrowDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PaginationControls } from "@/components/admin/pagination-controls";
 
 export default function RequestsPage() {
   const [requests, setRequests] = useState<DoctorRequest[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [count, setCount] = useState(0);
+  const [hasNext, setHasNext] = useState(false);
+  const [hasPrevious, setHasPrevious] = useState(false);
 
   // Search States
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // Sort States
-  const [sortBy, setSortBy] = useState("submitted_at");
+  const [sortBy, setSortBy] = useState("verification_submitted_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
 
   // Status Filter
@@ -33,43 +38,35 @@ export default function RequestsPage() {
 
   // Debounce Search
   useEffect(() => {
-    const handler = setTimeout(() => setDebouncedSearch(search), 500);
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 500);
     return () => clearTimeout(handler);
   }, [search]);
 
   const fetchRequests = useCallback(async () => {
     setIsLoading(true);
     try {
-      const statusParam = statusFilter === "all" ? "PENDING" : statusFilter.toUpperCase();
+      const statusParam = statusFilter === "all" ? undefined : statusFilter.toUpperCase();
       const orderingParam = `${order === "desc" ? "-" : ""}${sortBy}`;
 
       const data = await getDoctorRequests({
         search: debouncedSearch,
         verification_status: statusParam,
         ordering: orderingParam,
+        page,
       });
-
-      // لاگ گرفتن از اولین درخواست برای دیدن ساختار دقیق JSON بک‌اند
-      if (data.length > 0) {
-        console.log("Structure of first request:", data[1]);
-      }
-
-      let filteredData = data;
-      if (statusFilter === "all") {
-        filteredData = data.filter((r: any) => r.verification_status === "PENDING");
-      } else if (statusFilter === "approved") {
-        filteredData = data.filter((r: any) => r.verification_status === "APPROVED");
-      } else if (statusFilter === "rejected") {
-        filteredData = data.filter((r: any) => r.verification_status === "REJECTED");
-      }
-
-      setRequests(filteredData);
+      setRequests(data.results);
+      setCount(data.count);
+      setHasNext(Boolean(data.next));
+      setHasPrevious(Boolean(data.previous));
     } catch (err) {
       console.error(err);
     } finally {
       setIsLoading(false);
     }
-  }, [debouncedSearch, statusFilter, sortBy, order]);
+  }, [debouncedSearch, statusFilter, sortBy, order, page]);
 
   useEffect(() => {
     fetchRequests();
@@ -109,8 +106,13 @@ export default function RequestsPage() {
     }
   };
 
-  const handleViewDocs = (docs: DoctorDocument[], name: string) => {
-    setDocsData({ docs, name });
+  const handleViewDocs = async (request: DoctorRequest, name: string) => {
+    try {
+      const detail = await getDoctorRequestDetail(request.id);
+      setDocsData({ docs: detail.documents || [], name });
+    } catch (error) {
+      console.error("Unable to load verification documents", error);
+    }
   };
 
   const OrderIcon = order === "desc" ? ArrowDown : ArrowUp;
@@ -139,18 +141,18 @@ export default function RequestsPage() {
         <div className="flex flex-col md:flex-row md:items-center gap-2 p-1 border rounded-lg w-full md:w-auto border-gray-200">
           <span className="text-xs text-gray-500 px-2 whitespace-nowrap">مرتب سازی:</span>
           <div className="flex gap-2 w-full">
-            <Select value={sortBy} onValueChange={setSortBy}>
+            <Select value={sortBy} onValueChange={(value) => { setSortBy(value); setPage(1); }}>
               <SelectTrigger className="flex-1 text-xs border-none bg-transparent focus:ring-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="text-xs">
-                <SelectItem className="text-xs" value="submitted_at">تاریخ ارسال</SelectItem>
+                <SelectItem className="text-xs" value="verification_submitted_at">تاریخ ارسال</SelectItem>
                 <SelectItem className="text-xs" value="date_joined">تاریخ ساخت حساب</SelectItem>
                 <SelectItem className="text-xs" value="username">نام کاربری</SelectItem>
               </SelectContent>
             </Select>
 
-            <Select value={order} onValueChange={(v) => setOrder(v as "asc" | "desc")}>
+            <Select value={order} onValueChange={(v) => { setOrder(v as "asc" | "desc"); setPage(1); }}>
               <SelectTrigger className="w-[90px] border-none bg-transparent focus:ring-0 text-xs">
                 <div className="flex items-center gap-1">
                   <OrderIcon className="h-4 w-4 text-[#2993A3]" />
@@ -179,7 +181,7 @@ export default function RequestsPage() {
               key={opt.val}
               variant="ghost"
               size="sm"
-              onClick={() => setStatusFilter(opt.val as any)}
+              onClick={() => { setStatusFilter(opt.val as any); setPage(1); }}
               className={cn(
                 "rounded-md transition-colors flex-1 md:flex-none text-xs h-8",
                 statusFilter === opt.val ? "bg-[#66D3F7] text-white hover:bg-[#66D3F7]" : "text-gray-600 hover:bg-gray-50"
@@ -212,6 +214,14 @@ export default function RequestsPage() {
         )}
       </div>
 
+      <PaginationControls
+        count={count}
+        page={page}
+        hasNext={hasNext}
+        hasPrevious={hasPrevious}
+        onPageChange={setPage}
+      />
+
       {/* Modals */}
       <RejectModal
         isOpen={!!rejectTarget}
@@ -228,4 +238,4 @@ export default function RequestsPage() {
       />
     </div>
   );
-} 
+}
