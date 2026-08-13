@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { MessageSquare, ShieldCheck, Pencil, LogOut } from 'lucide-react';
+import { MessageSquare, ShieldCheck, Pencil, LogOut, Star } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useDoctorContext } from '@/context/doctor-context';
 import { clearTokens } from '@/lib/auth';
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { title: 'گفت و گو ها', href: '/doctor/chat', icon: MessageSquare },
   { title: 'احراز هویت', href: '/doctor/verification', icon: ShieldCheck },
+  { title: 'امتیازهای من', href: '/doctor/ratings', icon: Star },
 ];
 
 export function SidebarContent() {

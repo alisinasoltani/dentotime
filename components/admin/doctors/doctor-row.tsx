@@ -5,7 +5,7 @@ import { Doctor } from "@/lib/doctors";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MoreVertical, Trash2, Eye, Stethoscope, CheckCircle, Clock } from "lucide-react";
+import { MoreVertical, Trash2, Eye, Stethoscope, CheckCircle, Clock, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns-jalali"; // برای نمایش شمسی
 
@@ -13,9 +13,10 @@ interface Props {
   doctor: Doctor;
   onDeactivate: (doctor: Doctor) => void;
   onViewDocs: (docs: Doctor["documents"], name: string) => void;
+  onViewRatings: (doctor: Doctor, name: string) => void;
 }
 
-const DoctorRow = React.memo(({ doctor, onDeactivate, onViewDocs }: Props) => {
+const DoctorRow = React.memo(({ doctor, onDeactivate, onViewDocs, onViewRatings }: Props) => {
   // ایمن‌سازی در برابر undefined
   const user = doctor.user || (doctor as any);
   const firstName = user.first_name || "";
@@ -43,6 +44,10 @@ const DoctorRow = React.memo(({ doctor, onDeactivate, onViewDocs }: Props) => {
 
       {/* Verification Status & Date */}
       <div className="flex items-center gap-2 flex-shrink-0">
+        <button type="button" onClick={() => onViewRatings(doctor, fullName)} className="flex items-center gap-1 rounded-full bg-yellow-50 px-3 py-1 text-xs font-semibold text-yellow-700 hover:bg-yellow-100">
+          <Star className="h-3.5 w-3.5" fill="currentColor" />
+          {Number(doctor.average_rating || 0).toFixed(1)} از ۵ ({doctor.vote_count || 0} رأی)
+        </button>
         {doctor.verification_status === "APPROVED" && (
           <div className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-3 py-1 rounded-full">
             <CheckCircle className="h-3 w-3" />

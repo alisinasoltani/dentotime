@@ -7,6 +7,7 @@ export function useVerificationStatus(enabled: boolean) {
   const [status, setStatus] = useState<VerificationStatus>("NOT_SUBMITTED");
   const [rejectionNote, setRejectionNote] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(enabled);
+  const [hasResolved, setHasResolved] = useState(false);
 
   const refetch = useCallback(async () => {
     setIsLoading(true);
@@ -52,6 +53,7 @@ export function useVerificationStatus(enabled: boolean) {
       setStatus("NOT_SUBMITTED");
       setRejectionNote(null);
     } finally {
+      setHasResolved(true);
       setIsLoading(false);
     }
   }, []);
@@ -62,5 +64,10 @@ export function useVerificationStatus(enabled: boolean) {
     }
   }, [enabled, refetch]);
 
-  return { status, rejectionNote, isLoading, refetch };
+  return {
+    status,
+    rejectionNote,
+    isLoading: enabled && (!hasResolved || isLoading),
+    refetch,
+  };
 }

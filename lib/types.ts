@@ -267,27 +267,50 @@ export interface PublicDoctor {
   id: string;
   first_name: string;
   last_name: string;
+  display_name?: string;
   profile_picture?: string | null;
   specialty?: string;
   clinic_name?: string;
   likes_count: number;
   is_liked?: boolean;
-  average_rating?: number;
+  average_rating: number;
+  vote_count: number;
 }
 
 export interface Review {
   id: string;
-  user: {
-    first_name: string;
-    last_name: string;
-    profile_picture?: string | null;
-  };
+  reviewer_display_name: string;
   rating: number;
   comment: string;
   created_at: string;
+  updated_at: string;
 }
 
 export interface DoctorDetail extends PublicDoctor {
   bio?: string;
-  reviews?: Review[];
+}
+
+export interface PaginatedResponse<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
+export interface RatingVoter {
+  id: string;
+  voter: {
+    id: string | number;
+    first_name: string;
+    last_name: string;
+  };
+  rating: number;
+  comment: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RatingVoterPage extends PaginatedResponse<RatingVoter> {
+  average_rating: number;
+  vote_count: number;
 }

@@ -5,6 +5,7 @@ import { getDoctorsList, deactivateDoctorApi, Doctor } from "@/lib/doctors";
 import DoctorRow from "@/components/admin/doctors/doctor-row";
 import DeactivateDoctorModal from "@/components/admin/doctors/deactivate-doctor-modal";
 import DocumentsModal from "@/components/admin/requests/documents-modal"; // استفاده مجدد از مودال قبلی
+import { RatingsModal } from "@/components/admin/doctors/ratings-modal";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ArrowUp, ArrowDown } from "lucide-react";
@@ -25,6 +26,7 @@ export default function DoctorsListPage() {
   // Modals State
   const [deactivateTarget, setDeactivateTarget] = useState<Doctor | null>(null);
   const [docsData, setDocsData] = useState<{ docs: any[]; name: string } | null>(null);
+  const [ratingsData, setRatingsData] = useState<{ doctorId: number; name: string } | null>(null);
 
   // Debounce Search
   useEffect(() => {
@@ -143,6 +145,7 @@ export default function DoctorsListPage() {
               doctor={doc}
               onDeactivate={(d) => setDeactivateTarget(d)}
               onViewDocs={handleViewDocs}
+              onViewRatings={(doctor, name) => setRatingsData({ doctorId: doctor.id, name })}
             />
           ))
         )}
@@ -161,6 +164,11 @@ export default function DoctorsListPage() {
         onClose={() => setDocsData(null)}
         documents={docsData?.docs || []}
         doctorName={docsData?.name || ""}
+      />
+      <RatingsModal
+        doctorId={ratingsData?.doctorId ?? null}
+        doctorName={ratingsData?.name ?? ""}
+        onClose={() => setRatingsData(null)}
       />
     </div>
   );

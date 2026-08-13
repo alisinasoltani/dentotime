@@ -19,7 +19,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isOnVerificationPage = pathname === '/doctor/verification';
 
   useEffect(() => {
-    if (isUserLoading) return;
+    if (isUserLoading || (user && isVerificationLoading)) return;
 
     // 1. Not authenticated
     if (!user) {
@@ -45,7 +45,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       router.replace('/doctor/chat');
       return;
     }
-  }, [user, isUserLoading, verificationStatus, isOnVerificationPage, router]);
+  }, [user, isUserLoading, verificationStatus, isVerificationLoading, isOnVerificationPage, router]);
 
   // Loading States
   if (isUserLoading || (user && isVerificationLoading)) {

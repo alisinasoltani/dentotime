@@ -2,38 +2,46 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { getPublicDoctorsList } from '@/lib/public-doctors';
+import { getPublicDoctorsPage } from '@/lib/public-doctors';
 import { PublicDoctor } from '@/lib/types';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Search, Heart, Stethoscope, ChevronLeft } from 'lucide-react';
+import { Search, Heart, Star, Stethoscope, ChevronLeft } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 
 export default function DoctorsListPage() {
   const [doctors, setDoctors] = useState<PublicDoctor[]>([]);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
 
   useEffect(() => {
     const handler = setTimeout(() => setDebouncedSearch(search), 500);
     return () => clearTimeout(handler);
   }, [search]);
 
-  const fetchDoctors = useCallback(async () => {
-    setIsLoading(true);
+  const fetchDoctors = useCallback(async (nextPage = 1, append = false) => {
+    if (append) setIsLoadingMore(true);
+    else setIsLoading(true);
     try {
-      const data = await getPublicDoctorsList(debouncedSearch);
-      setDoctors(data);
+      const data = await getPublicDoctorsPage(debouncedSearch, nextPage);
+      setDoctors((current) => append ? [...current, ...data.results] : data.results);
+      setPage(nextPage);
+      setHasMore(Boolean(data.next));
     } catch (err) {
       console.error(err);
     } finally {
-      setIsLoading(false);
+      if (append) setIsLoadingMore(false);
+      else setIsLoading(false);
     }
   }, [debouncedSearch]);
 
   useEffect(() => {
-    fetchDoctors();
+    void fetchDoctors(1, false);
   }, [fetchDoctors]);
 
   return (
@@ -89,12 +97,23 @@ export default function DoctorsListPage() {
                     <Heart className="w-3.5 h-3.5" fill="currentColor" />
                     {doc.likes_count || 0} لایک
                   </div>
+                  <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-yellow-600">
+                    <Star className="h-3.5 w-3.5" fill="currentColor" />
+                    {doc.average_rating.toFixed(1)} از ۵ ({doc.vote_count} رأی)
+                  </div>
                 </div>
                 <ChevronLeft className="w-5 h-5 text-gray-400" />
               </Link>
             ))
           )}
         </div>
+        {hasMore && !isLoading && (
+          <div className="mt-8 text-center">
+            <Button variant="outline" disabled={isLoadingMore} onClick={() => void fetchDoctors(page + 1, true)}>
+              {isLoadingMore ? "در حال دریافت…" : "نمایش پزشکان بیشتر"}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

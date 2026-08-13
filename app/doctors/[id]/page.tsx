@@ -3,14 +3,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getPublicDoctorDetail, toggleDoctorLike, getDoctorReviews, submitDoctorReview } from '@/lib/public-doctors';
-import { DoctorDetail, Review } from '@/lib/types';
+import { DoctorDetail, Review, UserRole } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowRight, Heart, Star, Stethoscope, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
-import { restoreSession } from '@/lib/auth';
+import { getCurrentUser, restoreSession } from '@/lib/auth';
 
 export default function DoctorDetailPage() {
   const { id } = useParams();
@@ -23,17 +23,27 @@ export default function DoctorDetailPage() {
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState('');
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [reviewPage, setReviewPage] = useState(1);
+  const [hasMoreReviews, setHasMoreReviews] = useState(false);
+  const [viewerRole, setViewerRole] = useState<UserRole | null>(null);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      await restoreSession();
+      const authenticated = await restoreSession();
+      if (authenticated) {
+        setViewerRole((await getCurrentUser()).role);
+      } else {
+        setViewerRole(null);
+      }
       const [docData, revData] = await Promise.all([
         getPublicDoctorDetail(id as string),
         getDoctorReviews(id as string)
       ]);
       setDoctor(docData);
-      setReviews(revData);
+      setReviews(revData.results);
+      setReviewPage(1);
+      setHasMoreReviews(Boolean(revData.next));
     } catch (err) {
       console.error(err);
       toast.error("خطا در دریافت اطلاعات پزشک");
@@ -47,9 +57,13 @@ export default function DoctorDetailPage() {
   }, [fetchData]);
 
   const handleLike = async () => {
-    if (!(await restoreSession())) {
+    if (!(await restoreSession()) || viewerRole === null) {
       toast.error("برای لایک کردن ابتدا باید وارد شوید.");
       router.push("/login");
+      return;
+    }
+    if (viewerRole !== 'USER') {
+      toast.error("فقط بیماران می‌توانند پزشک را لایک کنند.");
       return;
     }
     if (!doctor) return;
@@ -77,20 +91,21 @@ export default function DoctorDetailPage() {
 
   const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!(await restoreSession())) {
+    if (!(await restoreSession()) || viewerRole === null) {
       toast.error("برای ثبت نظر ابتدا باید وارد شوید.");
       router.push("/login");
       return;
     }
-    if (!comment.trim()) {
-      toast.error("لطفا نظر خود را بنویسید");
+    if (viewerRole !== 'USER') {
+      toast.error("فقط بیماران می‌توانند به پزشک امتیاز دهند.");
       return;
     }
 
     setIsSubmittingReview(true);
     try {
       const newReview = await submitDoctorReview(id as string, { rating, comment });
-      setReviews(prev => [newReview, ...prev]);
+      setReviews(prev => [newReview, ...prev.filter((review) => review.id !== newReview.id)]);
+      setDoctor(await getPublicDoctorDetail(id as string));
       setComment('');
       setRating(5);
       toast.success("نظر شما با موفقیت ثبت شد");
@@ -142,7 +157,7 @@ export default function DoctorDetailPage() {
               <span className="text-xs text-gray-500 mb-1">امتیاز</span>
               <div className="flex items-center gap-1 font-bold text-yellow-500">
                 <Star className="w-4 h-4" fill="currentColor" />
-                {doctor?.average_rating?.toFixed(1) || "0.0"}
+                {doctor?.average_rating.toFixed(1) || "0.0"} از ۵ ({doctor?.vote_count || 0} رأی)
               </div>
             </div>
             
@@ -168,7 +183,7 @@ export default function DoctorDetailPage() {
           <h2 className="text-lg font-bold text-slate-800 mb-4">نظرات کاربران</h2>
 
           {/* Submit Review Form */}
-          <form onSubmit={handleReviewSubmit} className="mb-8 border-b border-gray-100 pb-6">
+          {viewerRole === 'USER' ? <form onSubmit={handleReviewSubmit} className="mb-8 border-b border-gray-100 pb-6">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-sm font-medium text-gray-700">امتیاز شما:</span>
               <div className="flex gap-1">
@@ -176,6 +191,8 @@ export default function DoctorDetailPage() {
                   <button
                     type="button"
                     key={star}
+                    aria-label={`${star} ستاره`}
+                    aria-pressed={star === rating}
                     onClick={() => setRating(star)}
                     className={`transition-transform hover:scale-110 ${star <= rating ? 'text-yellow-500' : 'text-gray-300'}`}
                   >
@@ -193,7 +210,11 @@ export default function DoctorDetailPage() {
             <Button type="submit" disabled={isSubmittingReview} className="bg-[#2993A3] hover:bg-[#1f7b89]">
               {isSubmittingReview ? "در حال ارسال..." : "ثبت نظر"}
             </Button>
-          </form>
+          </form> : (
+            <div className="mb-8 rounded-xl border border-cyan-100 bg-cyan-50 p-4 text-sm text-[#2993A3]">
+              {viewerRole === null ? "برای ثبت امتیاز ابتدا وارد حساب بیمار شوید." : "فقط حساب‌های بیمار امکان ثبت امتیاز دارند."}
+            </div>
+          )}
 
           {/* Reviews List */}
           <div className="space-y-4">
@@ -203,14 +224,13 @@ export default function DoctorDetailPage() {
               reviews.map((rev) => (
                 <div key={rev.id} className="flex gap-3">
                   <Avatar className="w-10 h-10 border border-gray-200 flex-shrink-0">
-                    <AvatarImage src={rev.user?.profile_picture || undefined} />
                     <AvatarFallback className="bg-gray-100 text-gray-500 text-xs">
-                      {rev.user?.first_name?.[0] || "ک"}
+                      {rev.reviewer_display_name?.[0] || "ک"}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 bg-slate-50 rounded-xl p-4">
                     <div className="flex justify-between items-center mb-1">
-                      <h4 className="font-bold text-sm text-slate-800">{rev.user?.first_name} {rev.user?.last_name}</h4>
+                      <h4 className="font-bold text-sm text-slate-800">{rev.reviewer_display_name}</h4>
                       <div className="flex items-center gap-1 text-xs text-yellow-500">
                         {Array.from({ length: rev.rating }).map((_, i) => (
                           <Star key={i} className="w-3 h-3" fill="currentColor" />
@@ -221,6 +241,22 @@ export default function DoctorDetailPage() {
                   </div>
                 </div>
               ))
+            )}
+            {hasMoreReviews && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={async () => {
+                  const nextPage = reviewPage + 1;
+                  const next = await getDoctorReviews(id as string, nextPage);
+                  setReviews((current) => [...current, ...next.results]);
+                  setReviewPage(nextPage);
+                  setHasMoreReviews(Boolean(next.next));
+                }}
+              >
+                نمایش نظرهای بیشتر
+              </Button>
             )}
           </div>
         </div>

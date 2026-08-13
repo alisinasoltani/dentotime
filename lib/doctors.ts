@@ -2,7 +2,7 @@ import api from "./api";
 
 export interface Doctor {
   id: number;
-  user: {
+  user?: {
     id: string;
     first_name: string;
     last_name: string;
@@ -10,8 +10,14 @@ export interface Doctor {
     profile_picture?: string;
     date_joined: string;
   };
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  profile_picture?: string;
   verification_status: "PENDING" | "APPROVED" | "REJECTED";
   verification_date?: string;
+  average_rating: number;
+  vote_count: number;
   documents: Array<{
     asset_id: string;
     file_name: string;

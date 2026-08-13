@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { getPublicDoctorsList } from '@/lib/public-doctors';
 import { PublicDoctor } from '@/lib/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Heart, Stethoscope } from 'lucide-react';
+import { Heart, Star, Stethoscope } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function DoctorsPreview() {
@@ -62,6 +62,10 @@ export default function DoctorsPreview() {
               <div className="flex items-center gap-1 text-sm font-bold text-[#2993A3]">
                 <Heart className="w-4 h-4" fill="currentColor" />
                 {doc.likes_count || 0} لایک
+              </div>
+              <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-yellow-600">
+                <Star className="h-3.5 w-3.5" fill="currentColor" />
+                {doc.average_rating.toFixed(1)} ({doc.vote_count} رأی)
               </div>
             </Link>
           ))
