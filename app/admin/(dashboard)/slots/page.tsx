@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { AxiosResponse } from "axios";
+import { AvailabilityManager } from "@/components/admin/availability-manager";
 
 interface AppointmentSlot {
     id: string | number;
@@ -45,6 +46,7 @@ export default function SlotsManagementPage() {
 
     const [slotsByDate, setSlotsByDate] = useState<Record<string, AppointmentSlot[]>>({});
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+    const [availabilityVersion, setAvailabilityVersion] = useState(0);
 
     useEffect(() => {
         const fetchSlots = async () => {
@@ -54,7 +56,7 @@ export default function SlotsManagementPage() {
                 const end = gFormat(endOfMonth(currentMonth), 'yyyy-MM-dd');
 
                 let allSlots: AppointmentSlot[] = [];
-                let url: string | null = `/appointments/slots/?start_date=${start}&end_date=${end}&_t=${Date.now()}`;
+                let url: string | null = `/admin/appointments/slots/?start_date=${start}&end_date=${end}&_t=${Date.now()}`;
 
                 while (url) {
                     const res: AxiosResponse<SlotsResponse> = await api.get<SlotsResponse>(url);
@@ -94,7 +96,7 @@ export default function SlotsManagementPage() {
             }
         };
         fetchSlots();
-    }, [currentMonth]);
+    }, [currentMonth, availabilityVersion]);
 
     const monthDiff = differenceInCalendarMonths(currentMonth, today);
     const canGoNext = monthDiff < 2;
@@ -131,8 +133,8 @@ export default function SlotsManagementPage() {
         setIsSubmitting(true);
         try {
             const dateStr = gFormat(selectedDateObj, 'yyyy-MM-dd');
-            const start_at = `${dateStr}T${startTime}:00Z`;
-            const end_at = `${dateStr}T${endTime}:00Z`;
+            const start_at = `${dateStr}T${startTime}:00+03:30`;
+            const end_at = `${dateStr}T${endTime}:00+03:30`;
 
             const res = await api.post('/admin/appointments/slots/', {
                 date: dateStr,
@@ -190,6 +192,8 @@ export default function SlotsManagementPage() {
     return (
         <div className="w-full flex flex-col space-y-6">
             <h1 className="text-2xl font-bold text-gray-800 text-center md:text-right pt-16 md:pt-0">مدیریت زمان‌های نوبت‌دهی</h1>
+
+            <AvailabilityManager onGenerated={() => setAvailabilityVersion((value) => value + 1)} />
 
             <div className="flex flex-col lg:flex-row gap-8 items-start">
 
@@ -289,8 +293,14 @@ export default function SlotsManagementPage() {
                                     <p className="text-center text-gray-400 py-8 text-sm">هیچ بازه‌ای برای این روز ثبت نشده است.</p>
                                 ) : (
                                     selectedDateSlots.map((slot) => {
-                                        const start = slot.start_at.slice(11, 16);
-                                        const end = slot.end_at.slice(11, 16);
+                                        const formatter = new Intl.DateTimeFormat("fa-IR", {
+                                            timeZone: "Asia/Tehran",
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                            hour12: false,
+                                        });
+                                        const start = formatter.format(new Date(slot.start_at));
+                                        const end = formatter.format(new Date(slot.end_at));
                                         const isBooked = slot.status !== "AVAILABLE" && slot.is_booked !== false;
 
                                         return (
