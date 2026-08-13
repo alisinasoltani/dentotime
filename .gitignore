@@ -31,5 +31,6 @@ structure.txt
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+sbom.cdx.json
 .idea/
 .vscode/
