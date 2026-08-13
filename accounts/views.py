@@ -5,13 +5,15 @@ from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, Prefetch
+from django.db.models import Avg, BooleanField, Count, Exists, FloatField, OuterRef, Prefetch, Value
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework import generics
 from rest_framework.filters import SearchFilter, OrderingFilter
 from rest_framework.generics import RetrieveUpdateAPIView, ListAPIView
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -33,7 +35,8 @@ from .serializers import (
     UserProfileSerializer, PasswordChangeSerializer,
     AdminUserListSerializer, AdminDoctorListSerializer,
     DoctorVerificationStatusSerializer, DoctorVerificationSubmitSerializer,
-    DoctorReviewSerializer, PublicDoctorListSerializer, PublicDoctorDetailSerializer
+    DoctorReviewSerializer, PublicDoctorListSerializer, PublicDoctorDetailSerializer,
+    RatingVoterSerializer,
 )
 
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
@@ -243,7 +246,10 @@ class AdminDoctorListView(ListAPIView):
     ordering_fields = ["date_joined", "verification_status"]
     
     def get_queryset(self):
-        qs = Doctor.objects.all().prefetch_related(
+        qs = Doctor.objects.annotate(
+            average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=FloatField()),
+            vote_count=Count("reviews", distinct=True),
+        ).prefetch_related(
             Prefetch("documents", queryset=DoctorDocument.objects.select_related("asset"))
         )
         status = self.request.query_params.get("verification_status")
@@ -460,8 +466,9 @@ class PublicDoctorListView(generics.ListAPIView):
             verification_status=Doctor.VerificationStatus.APPROVED,
             is_active=True
         ).annotate(
-            likes_count=Count('likes'),
-            reviews_count=Count('reviews')
+            likes_count=Count("likes", distinct=True),
+            average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=FloatField()),
+            vote_count=Count("reviews", distinct=True),
         ).order_by("pk")
 
 class PublicDoctorDetailView(generics.RetrieveAPIView):
@@ -474,27 +481,49 @@ class PublicDoctorDetailView(generics.RetrieveAPIView):
     )
 
     def get_queryset(self):
-        return super().get_queryset().annotate(likes_count=Count('likes'))
+        user = self.request.user
+        liked = (
+            Exists(Doctor.likes.through.objects.filter(doctor_id=OuterRef("pk"), user_id=user.pk))
+            if user.is_authenticated and user.is_normal_user
+            else Value(False, output_field=BooleanField())
+        )
+        return super().get_queryset().annotate(
+            likes_count=Count("likes", distinct=True),
+            average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=FloatField()),
+            vote_count=Count("reviews", distinct=True),
+            is_liked=liked,
+        )
 
 class LikeDoctorView(APIView):
     """لایک یا آنلایک کردن یک دکتر (نیازمند لاگین)"""
     permission_classes = [IsNormalUser]
 
     def post(self, request, pk):
-        doctor = get_object_or_404(
-            Doctor,
-            pk=pk,
-            is_active=True,
-            verification_status=Doctor.VerificationStatus.APPROVED,
+        with transaction.atomic():
+            doctor = get_object_or_404(
+                Doctor.objects.select_for_update(),
+                pk=pk,
+                is_active=True,
+                verification_status=Doctor.VerificationStatus.APPROVED,
+            )
+            relation = Doctor.likes.through.objects.filter(
+                doctor_id=doctor.pk,
+                user_id=request.user.pk,
+            )
+            if relation.exists():
+                relation.delete()
+                is_liked = False
+            else:
+                Doctor.likes.through.objects.create(
+                    doctor_id=doctor.pk,
+                    user_id=request.user.pk,
+                )
+                is_liked = True
+            likes_count = Doctor.likes.through.objects.filter(doctor_id=doctor.pk).count()
+        return Response(
+            {"detail": "Like updated.", "is_liked": is_liked, "likes_count": likes_count},
+            status=status.HTTP_200_OK,
         )
-        user = request.user
-
-        if user in doctor.likes.all():
-            doctor.likes.remove(user)
-            return Response({"detail": "لایک برداشته شد.", "liked": False}, status=status.HTTP_200_OK)
-        else:
-            doctor.likes.add(user)
-            return Response({"detail": "دکتر لایک شد.", "liked": True}, status=status.HTTP_200_OK)
 
 class ReviewListCreateView(generics.ListCreateAPIView):
     """دیدن نظرات و ثبت نظر جدید برای یک دکتر"""
@@ -513,13 +542,100 @@ class ReviewListCreateView(generics.ListCreateAPIView):
             is_active=True,
             verification_status=Doctor.VerificationStatus.APPROVED,
         )
-        return DoctorReview.objects.filter(doctor=doctor)
+        return DoctorReview.objects.filter(doctor=doctor).select_related("user").only(
+            "id", "doctor_id", "user_id", "user__first_name", "user__last_name",
+            "rating", "comment", "created_at", "updated_at",
+        )
 
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
         doctor = get_object_or_404(
             Doctor,
             pk=self.kwargs['pk'],
             is_active=True,
             verification_status=Doctor.VerificationStatus.APPROVED,
         )
-        serializer.save(user=self.request.user, doctor=doctor)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        review, created = DoctorReview.objects.update_or_create(
+            doctor=doctor,
+            user=request.user,
+            defaults={
+                "rating": serializer.validated_data["rating"],
+                "comment": serializer.validated_data.get("comment", ""),
+            },
+        )
+        output = DoctorReviewSerializer(review, context=self.get_serializer_context())
+        return Response(
+            output.data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class RatingVoterPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+    def get_paginated_response(self, data):
+        return Response(
+            {
+                "count": self.page.paginator.count,
+                "next": self.get_next_link(),
+                "previous": self.get_previous_link(),
+                "average_rating": self.rating_summary["average_rating"],
+                "vote_count": self.rating_summary["vote_count"],
+                "results": data,
+            }
+        )
+
+
+class BaseRatingVoterListView(generics.ListAPIView):
+    serializer_class = RatingVoterSerializer
+    pagination_class = RatingVoterPagination
+    filter_backends = (SearchFilter, OrderingFilter)
+    search_fields = ("user__first_name", "user__last_name")
+    ordering_fields = ("rating", "created_at", "updated_at")
+    ordering = "-created_at"
+
+    def get_doctor(self):
+        raise NotImplementedError
+
+    def get_queryset(self):
+        doctor = self.get_doctor()
+        queryset = DoctorReview.objects.filter(doctor=doctor).select_related("user").only(
+            "id", "doctor_id", "user_id", "user__first_name", "user__last_name",
+            "rating", "comment", "created_at", "updated_at",
+        )
+        self.rating_summary = queryset.aggregate(
+            average_rating=Coalesce(Avg("rating"), Value(0.0), output_field=FloatField()),
+            vote_count=Count("pk"),
+        )
+        return queryset
+
+    def paginate_queryset(self, queryset):
+        self.paginator.rating_summary = self.rating_summary
+        return super().paginate_queryset(queryset)
+
+    def filter_queryset(self, queryset):
+        rating = self.request.query_params.get("rating")
+        if rating is not None:
+            if rating not in {"1", "2", "3", "4", "5"}:
+                from rest_framework.exceptions import ValidationError
+
+                raise ValidationError({"rating": "Choose an integer from 1 to 5."})
+            queryset = queryset.filter(rating=int(rating))
+        return super().filter_queryset(queryset)
+
+
+class DoctorOwnRatingVoterListView(BaseRatingVoterListView):
+    permission_classes = (IsDoctorRole,)
+
+    def get_doctor(self):
+        return self.request.user.doctor_profile
+
+
+class AdminRatingVoterListView(BaseRatingVoterListView):
+    permission_classes = (IsAdminRole,)
+
+    def get_doctor(self):
+        return get_object_or_404(Doctor, pk=self.kwargs["pk"])

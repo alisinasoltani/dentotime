@@ -182,6 +182,18 @@ ENDPOINTS = (
         frozenset({"patient"}),
         lambda c: {"rating": 5, "comment": "good"},
     ),
+    EndpointCase(
+        "doctor_rating_voters",
+        "get",
+        lambda c: "/api/v1/doctors/ratings/",
+        DOCTORS,
+    ),
+    EndpointCase(
+        "admin_rating_voters",
+        "get",
+        lambda c: f"/api/v1/admin/doctors/{c['doctor_approved'].pk}/ratings/",
+        frozenset({"admin"}),
+    ),
     EndpointCase("thread_list", "get", lambda c: "/api/v1/chat/threads/", MESSAGING),
     EndpointCase(
         "thread_get_or_create",

@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     AdminUserListView, AdminDoctorListView, 
     AdminUserDeactivateView, AdminUserReactivateView,
-    AdminDoctorApproveView, AdminDoctorRejectView
+    AdminDoctorApproveView, AdminDoctorRejectView,
+    AdminRatingVoterListView,
 )
 
 urlpatterns = [
@@ -12,4 +13,5 @@ urlpatterns = [
     path("users/<int:pk>/reactivate/", AdminUserReactivateView.as_view(), name="admin_user_reactivate"),
     path("doctors/<int:pk>/approve/", AdminDoctorApproveView.as_view(), name="admin_doctor_approve"),
     path("doctors/<int:pk>/reject/", AdminDoctorRejectView.as_view(), name="admin_doctor_reject"),
+    path("doctors/<int:pk>/ratings/", AdminRatingVoterListView.as_view(), name="admin_doctor_ratings"),
 ]

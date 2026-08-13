@@ -278,14 +278,26 @@ class OTPChallenge(models.Model):
 class DoctorReview(models.Model):
     doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name='reviews')
     user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name='doctor_reviews')
-    rating = models.PositiveIntegerField(default=5) # امتیاز ۱ تا ۵
-    comment = models.TextField()
+    rating = models.PositiveSmallIntegerField()
+    comment = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-created_at']
-        # یک کاربر فقط یک بار بتواند برای یک دکتر نظر بدهد
-        unique_together = ('doctor', 'user') 
+        ordering = ("-created_at", "-id")
+        indexes = [
+            models.Index(fields=("doctor", "-created_at", "-id"), name="rating_doctor_created_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=("doctor", "user"),
+                name="unique_patient_rating_per_doctor",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(rating__gte=1, rating__lte=5),
+                name="doctor_rating_between_1_and_5",
+            ),
+        ]
 
     def __str__(self):
         return f"Review by {self.user.phone_number} on {self.doctor.phone_number}"

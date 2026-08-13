@@ -156,12 +156,14 @@ class AdminUserListSerializer(serializers.ModelSerializer):
 class AdminDoctorListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for admin doctor lists."""
     documents = DoctorDocumentSerializer(many=True, read_only=True)
+    average_rating = serializers.FloatField(read_only=True)
+    vote_count = serializers.IntegerField(read_only=True)
     class Meta:
         model = Doctor
         fields = (
             "id", "phone_number", "username", "first_name", "last_name", 
             "is_active", "verification_status", "account_owner", "date_joined",
-            "documents"
+            "documents", "average_rating", "vote_count"
         )
 
 
@@ -255,39 +257,75 @@ class DoctorVerificationSubmitSerializer(serializers.ModelSerializer):
             
         return instance
 
+class StrictRatingField(serializers.IntegerField):
+    def to_internal_value(self, data):
+        if isinstance(data, bool) or not isinstance(data, int):
+            self.fail("invalid")
+        return super().to_internal_value(data)
+
+
 class DoctorReviewSerializer(serializers.ModelSerializer):
-    user_name = serializers.CharField(source='user.first_name', read_only=True)
-    user_last_name = serializers.CharField(source='user.last_name', read_only=True)
+    rating = StrictRatingField(min_value=1, max_value=5)
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=2000, trim_whitespace=True)
+    reviewer_display_name = serializers.SerializerMethodField()
+
+    def get_reviewer_display_name(self, obj):
+        first_name = obj.user.first_name.strip()
+        last_initial = obj.user.last_name.strip()[:1]
+        if first_name and last_initial:
+            return f"{first_name} {last_initial}."
+        return first_name or "Patient"
 
     class Meta:
         model = DoctorReview
-        fields = ('id', 'user_name', 'user_last_name', 'rating', 'comment', 'created_at')
-        read_only_fields = ('user', 'doctor')
+        fields = ("id", "reviewer_display_name", "rating", "comment", "created_at", "updated_at")
+        read_only_fields = ("id", "reviewer_display_name", "created_at", "updated_at")
+
+
+class RatingVoterSerializer(serializers.ModelSerializer):
+    voter = serializers.SerializerMethodField()
+
+    def get_voter(self, obj):
+        return {
+            "id": obj.user_id,
+            "first_name": obj.user.first_name,
+            "last_name": obj.user.last_name,
+        }
+
+    class Meta:
+        model = DoctorReview
+        fields = ("id", "voter", "rating", "comment", "created_at", "updated_at")
 
 class PublicDoctorListSerializer(serializers.ModelSerializer):
     """سریالایزر عمومی برای نمایش لیست دکترها در سایت"""
     likes_count = serializers.IntegerField(read_only=True)
-    reviews_count = serializers.IntegerField(read_only=True)
+    vote_count = serializers.IntegerField(read_only=True)
+    average_rating = serializers.FloatField(read_only=True)
     display_name = serializers.CharField(read_only=True)
 
     class Meta:
         model = Doctor
-        fields = ('id', 'display_name', 'clinic_name', 'profile_picture', 'likes_count', 'reviews_count')
+        fields = (
+            "id", "first_name", "last_name", "display_name", "clinic_name",
+            "profile_picture", "likes_count", "average_rating", "vote_count",
+        )
 
 class PublicDoctorDetailSerializer(serializers.ModelSerializer):
     """سریالایزر عمومی برای نمایش اطلاعات کامل یک دکتر + نظرات"""
     likes_count = serializers.IntegerField(read_only=True)
-    reviews = DoctorReviewSerializer(many=True, read_only=True)
+    vote_count = serializers.IntegerField(read_only=True)
+    average_rating = serializers.FloatField(read_only=True)
     display_name = serializers.CharField(read_only=True)
     is_liked = serializers.SerializerMethodField()
 
     class Meta:
         model = Doctor
-        fields = ('id', 'display_name', 'clinic_name', 'profile_picture', 'likes_count', 'is_liked', 'reviews')
+        fields = (
+            "id", "first_name", "last_name", "display_name", "clinic_name",
+            "profile_picture", "likes_count", "is_liked", "average_rating", "vote_count",
+        )
 
     def get_is_liked(self, obj):
         # بررسی اینکه آیا کاربر فعلی این دکتر را لایک کرده است یا خیر
         request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            return obj.likes.filter(id=request.user.id).exists()
-        return False
+        return bool(getattr(obj, "is_liked", False))
