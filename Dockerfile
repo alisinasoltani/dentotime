@@ -8,12 +8,16 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 ARG BACKEND_INTERNAL_URL
 ARG NEXT_PUBLIC_API_URL
+ARG ALLOW_INSECURE_HTTP=false
 ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL \
     NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    ALLOW_INSECURE_HTTP=$ALLOW_INSECURE_HTTP \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
-RUN test -n "$BACKEND_INTERNAL_URL" && test -n "$NEXT_PUBLIC_API_URL" && npm run build
+# NEXT_PUBLIC_API_URL may intentionally be empty when the browser uses the
+# same-origin /api rewrite. BACKEND_INTERNAL_URL is still required for SSR.
+RUN test -n "$BACKEND_INTERNAL_URL" && npm run build
 
 FROM node:22-alpine AS runtime
 ENV NODE_ENV=production \

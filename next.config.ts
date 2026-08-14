@@ -1,12 +1,13 @@
 import type { NextConfig } from "next";
 
 const isProduction = process.env.NODE_ENV === "production";
+const allowInsecureHttp = process.env.ALLOW_INSECURE_HTTP === "true";
 const backendInternalUrl = (
   process.env.BACKEND_INTERNAL_URL ?? "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
 
 const backendUrl = new URL(backendInternalUrl);
-if (isProduction && backendUrl.protocol !== "https:") {
+if (isProduction && !allowInsecureHttp && backendUrl.protocol !== "https:") {
   throw new Error("BACKEND_INTERNAL_URL must use HTTPS in production.");
 }
 
@@ -16,7 +17,7 @@ const publicApiOrigin = process.env.NEXT_PUBLIC_API_URL
 if (
   isProduction &&
   publicApiOrigin &&
-  new URL(publicApiOrigin).protocol !== "https:"
+  !allowInsecureHttp && new URL(publicApiOrigin).protocol !== "https:"
 ) {
   throw new Error("NEXT_PUBLIC_API_URL must use HTTPS in production.");
 }
@@ -35,7 +36,7 @@ const contentSecurityPolicy = [
   // Keep this development-only; production remains free of unsafe-eval.
   `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
-  ...(isProduction ? ["upgrade-insecure-requests"] : []),
+  ...(isProduction && !allowInsecureHttp ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
 
 const securityHeaders = [
@@ -49,7 +50,7 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
-  ...(isProduction
+  ...(isProduction && !allowInsecureHttp
     ? [
         {
           key: "Strict-Transport-Security",
