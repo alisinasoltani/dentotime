@@ -21,7 +21,13 @@ export default function DoctorLayout({
     let active = true;
     const authorize = async () => {
       const restored = await restoreSession();
-      if (!restored || !active) return router.replace("/login");
+      // React Strict Mode may clean up an effect while its async work is
+      // still finishing. A stale effect must never redirect the active route.
+      if (!active) return;
+      if (!restored) {
+        router.replace("/login");
+        return;
+      }
       const user = await getCurrentUser();
       if (!active) return;
       if (user.role !== "DOCTOR") return router.replace("/login");
