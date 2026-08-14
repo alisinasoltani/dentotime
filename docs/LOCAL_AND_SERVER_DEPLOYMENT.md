@@ -13,7 +13,7 @@ Do not use SQLite for the test suite. Locking, constraints, query plans, and con
 From PowerShell at the repository root:
 
 ~~~powershell
-docker run --detach --name dentotime-postgres --env POSTGRES_DB=dentotime --env POSTGRES_USER=dentotime --env POSTGRES_PASSWORD=dentotime-local-password --publish 5432:5432 --volume dentotime-postgres-data:/var/lib/postgresql/data postgres:17
+docker run --detach --name dentotime-postgres --env POSTGRES_DB=dentotime --env POSTGRES_USER=dentotime --env POSTGRES_PASSWORD=dentotime-local-password --publish 55432:5432 --volume dentotime-postgres-data:/var/lib/postgresql/data postgres:17
 docker run --detach --name dentotime-redis --publish 6379:6379 --volume dentotime-redis-data:/data redis:8-alpine redis-server --appendonly yes
 docker run --detach --name dentotime-minio --env MINIO_ROOT_USER=dentotime-local --env MINIO_ROOT_PASSWORD=dentotime-local-minio-password --publish 9000:9000 --publish 9001:9001 --volume dentotime-minio-data:/data minio/minio:RELEASE.2025-09-07T16-13-09Z server /data --console-address :9001
 ~~~
@@ -56,7 +56,7 @@ DB_NAME=dentotime
 DB_USER=dentotime
 DB_PASS=dentotime-local-password
 DB_HOST=127.0.0.1
-DB_PORT=5432
+DB_PORT=55432
 DB_SSLMODE=disable
 REDIS_URL=redis://127.0.0.1:6379/1
 AWS_ACCESS_KEY_ID=dentotime-local
@@ -308,6 +308,5 @@ Named volumes remain for reuse. List them before any intentional deletion:
 ~~~powershell
 docker volume ls --filter name=dentotime-
 ~~~
-
 
 
