@@ -206,7 +206,7 @@ export default function Footer() {
             {/* --- Decorative Teeth Image --- */}
             <div className="absolute -bottom-14 md:-bottom-12 left-[55%] -translate-x-1/2 flex items-end justify-center pointer-events-none">
               <div className="w-25 h-25 backdrop-blur-md rounded-full flex items-center justify-center text-xs font-bold text-slate-400 relative">
-                <Image src={"/images/footer_image.png"} fill alt='' />
+                <Image src={"/images/footer_image.png"} fill sizes="100px" alt='' />
               </div>
             </div>
 

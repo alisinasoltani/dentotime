@@ -12,7 +12,7 @@
 export const SUPPORT_PHONE_NUMBER = '021-2061454';
 
 /** Backend base URL (without /api/v1 suffix — that's appended in lib/api.ts). */
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
 
 /** Chat message polling interval — 3 seconds (Section 6.3). */
 export const CHAT_MESSAGE_POLLING_INTERVAL = 3_000;

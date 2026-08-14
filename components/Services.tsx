@@ -29,7 +29,7 @@ export default function Services() {
 
         {/* 1. عکس خانم (راست) - 3 ستون در دسکتاپ */}
         <div className="md:col-span-1 lg:col-span-3 rounded-[32px] bg-slate-200 w-full aspect-square flex items-center justify-center overflow-hidden relative shadow-sm">
-          <Image src={"/images/services_image_1.png"} fill alt='' />
+          <Image src={"/images/services_image_1.png"} fill sizes="(min-width: 1024px) 25vw, (min-width: 768px) 50vw, 100vw" alt='' />
         </div>
 
         {/* 2. کارت خدمات یک‌روزه (وسط) - 6 ستون در دسکتاپ (پهن‌تر) */}
@@ -38,7 +38,7 @@ export default function Services() {
         hover:outline-2 hover:outline-[#9BCAD7] hover:shadow-[0_4px_36px_4px_rgba(164,210,223,0.69)]">
           <div className='flex flex-col gap-2 mb-2'>
             <div className="w-16 h-16flex items-center justify-center">
-              <Image src={fast_services_icon} width={64} height={64} alt='' />
+              <Image src={fast_services_icon} alt='' className="h-16 w-auto" />
             </div>
             <h3 className="text-2xl font-bold text-slate-900">خدمات یک‌روزه</h3>
             <p className="text-slate-600 leading-relaxed text-sm md:text-base font-medium max-w-md">
@@ -53,7 +53,7 @@ export default function Services() {
 
         {/* 3. عکس دندان (چپ) - 3 ستون در دسکتاپ */}
         <div className="md:col-span-1 lg:col-span-3 rounded-[32px] w-full aspect-square bg-slate-200 flex items-center justify-center overflow-hidden relative shadow-sm">
-          <Image src={"/images/services_image_2.png"} fill alt='' />
+          <Image src={"/images/services_image_2.png"} fill sizes="(min-width: 1024px) 25vw, (min-width: 768px) 50vw, 100vw" alt='' />
         </div>
 
 
@@ -64,7 +64,7 @@ export default function Services() {
         hover:outline-2 hover:outline-[#9BCAD7] hover:shadow-[0_4px_36px_4px_rgba(164,210,223,0.69)]">
           <div className='flex flex-col gap-2 mb-2'>
             <div className="w-16 h-16 mb-2 flex items-center justify-center">
-              <Image src={digital_services_icon} width={64} height={64} alt='' />
+              <Image src={digital_services_icon} alt='' className="h-16 w-auto" />
             </div>
             <h3 className="text-2xl font-bold text-slate-900 mb-4">دندانپزشکی دیجیتال</h3>
             <p className="text-slate-600 leading-relaxed text-sm md:text-base font-medium">
@@ -82,7 +82,7 @@ export default function Services() {
         hover:outline-2 hover:outline-[#9BCAD7] hover:shadow-[0_4px_36px_4px_rgba(164,210,223,0.69)]">
           <div className='flex flex-col gap-2 mb-2'>
             <div className="w-16 h-16 mb-2 flex items-center justify-center">
-              <Image src={movable_prosthesis_icon} width={64} height={64} alt='' />
+              <Image src={movable_prosthesis_icon} alt='' className="h-16 w-auto" />
             </div>
             <h3 className="text-2xl font-bold text-slate-900 mb-4">پروتز متحرک</h3>
             <p className="text-slate-600 leading-relaxed text-sm md:text-base font-medium">
@@ -100,7 +100,7 @@ export default function Services() {
         hover:outline-2 hover:outline-[#9BCAD7] hover:shadow-[0_4px_36px_4px_rgba(164,210,223,0.69)]">
           <div>
             <div className="w-16 h-16 mb-6 flex items-center justify-center">
-              <Image src={implant_icon} height={64} alt='' />
+              <Image src={implant_icon} alt='' className="h-16 w-auto" />
             </div>
             <h3 className="text-2xl font-bold text-slate-900 mb-4">ایمپلنت دندان</h3>
             <p className="text-slate-600 leading-relaxed text-sm md:text-base font-medium">

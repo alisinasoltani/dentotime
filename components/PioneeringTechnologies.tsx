@@ -67,7 +67,7 @@ export default function PioneeringTechnologies() {
                   <Image src="..." alt={item.title} fill className="object-cover" />
                 */}
                 <div className="absolute inset-0 flex items-center justify-center text-slate-400 font-medium">
-                  <Image src={item.imageUrl} fill alt='' />
+                  <Image src={item.imageUrl} fill sizes="(min-width: 1024px) 42vw, 100vw" alt='' />
                 </div>
               </div>
 

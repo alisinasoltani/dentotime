@@ -37,7 +37,7 @@ export default function FeaturesSection() {
           {/* Placeholder for the main image */}
           <div className="w-full aspect-4/3 bg-slate-200 rounded-[36px] overflow-hidden relative shadow-md">
              <div className="absolute inset-0 flex items-center justify-center text-slate-500 font-medium">
-               <Image src={"/images/features_image_2.png"} fill alt='' />
+               <Image src={"/images/features_image_2.png"} fill sizes="(min-width: 1024px) 50vw, 100vw" alt='' />
              </div>
           </div>
         </div>
@@ -51,7 +51,7 @@ export default function FeaturesSection() {
         <div className="w-full lg:w-[55%] relative ml-0 lg:ml-16">
           <div className="bg-[linear-gradient(135deg,#E8F4F7_0%,#D0EBEF_100%)] rounded-[58px] p-8 md:p-12 lg:p-16 w-full aspect-4/3 flex flex-col justify-center relative overflow-visible shadow-sm">
             {/* Background Image Placeholder inside the card */}
-            <Image className="absolute inset-0 rounded-[58px] z-0" src={"/images/features_image_3.png"} fill alt='' />
+            <Image className="absolute inset-0 rounded-[58px] z-0" src={"/images/features_image_3.png"} fill sizes="(min-width: 1024px) 55vw, 100vw" alt='' />
             
             <div className="relative z-10 text-right pr-2">
               <h3 className="text-2xl md:text-3xl font-extrabold text-slate-900 mb-4">
@@ -108,7 +108,7 @@ export default function FeaturesSection() {
         <div className="w-full lg:w-1/2">
           <div className="w-full aspect-4/3 bg-slate-200 rounded-[36px] overflow-hidden relative shadow-md">
              <div className="absolute inset-0 flex items-center justify-center text-slate-500 font-medium">
-                <Image src={"/images/features_image_1.png"} fill alt='' />
+                <Image src={"/images/features_image_1.png"} fill sizes="(min-width: 1024px) 50vw, 100vw" alt='' />
              </div>
           </div>
         </div>

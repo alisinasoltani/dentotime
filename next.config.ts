@@ -31,7 +31,9 @@ const contentSecurityPolicy = [
   "frame-ancestors 'none'",
   "img-src 'self' data: blob: https:",
   "object-src 'none'",
-  "script-src 'self' 'unsafe-inline'",
+  // React's development runtime uses eval to reconstruct component stacks.
+  // Keep this development-only; production remains free of unsafe-eval.
+  `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"}`,
   "style-src 'self' 'unsafe-inline'",
   ...(isProduction ? ["upgrade-insecure-requests"] : []),
 ].join("; ");
@@ -59,6 +61,10 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Django's APPEND_SLASH redirects API paths to a trailing slash. Let the
+  // rewrite reach Django instead of having Next normalize the slash first,
+  // which otherwise creates a redirect loop for browser Axios requests.
+  skipTrailingSlashRedirect: true,
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
@@ -66,7 +72,10 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: `${backendInternalUrl}/api/:path*`,
+        // Next normalizes catch-all parameters without their final slash;
+        // Django's URL patterns use APPEND_SLASH. Add it at the proxy
+        // boundary so API calls never bounce between the two servers.
+        destination: `${backendInternalUrl}/api/:path*/`,
       },
     ];
   },
