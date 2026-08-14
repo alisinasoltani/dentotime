@@ -202,6 +202,34 @@ backend -> private S3-compatible bucket
 backend -> ClamAV/clamd
 ~~~
 
+## 8a. Temporary HTTP review deployment
+
+For a short-lived employer review environment without a domain or certificate, use `docker-compose.http.yml` from the backend repository. It builds both application images, starts PostgreSQL, Redis, and MinIO, runs migrations before Django, and publishes the frontend on port 3000.
+
+The backend and data services are bound to loopback except for MinIO's API port, which is needed by browser-direct presigned uploads. Restrict port 9000 with the server firewall if uploads are not being reviewed.
+
+~~~bash
+cd /opt/dentotime/backend
+cp .env.server.example .env.server
+# Edit SERVER_HOST, PUBLIC_ORIGIN, ALLOWED_HOSTS, CORS_ALLOWED_ORIGINS,
+# CSRF_TRUSTED_ORIGINS, and every replace-with-* secret.
+docker compose --env-file .env.server -f docker-compose.http.yml up -d --build
+docker compose --env-file .env.server -f docker-compose.http.yml ps
+~~~
+
+Open `http://SERVER_HOST:3000`. Update the two repositories with `git pull`, then rerun the same `up -d --build` command. Do not expose PostgreSQL, Redis, or Django port 8000 publicly. This profile is for review only: HTTP credentials and HTTP refresh cookies are not suitable for real users.
+
+### `UVICORN_FORWARDED_ALLOW_IPS`
+
+This value controls which peer IPs Uvicorn trusts when processing `X-Forwarded-For` and `X-Forwarded-Proto`. It is not a list of application clients.
+
+- Direct HTTP access with no reverse proxy: set `UVICORN_FORWARDED_ALLOW_IPS=127.0.0.1`. Client-supplied forwarded headers are ignored.
+- One reverse proxy on the same host: set it to that proxy's container or host IP, for example `172.20.0.5`.
+- Multiple fixed proxy addresses: use a comma-separated list, for example `10.0.0.10,10.0.0.11`.
+- Never use `*` on a publicly reachable service; it allows any client to spoof forwarded scheme and address information.
+
+The HTTP Compose profile uses `127.0.0.1` because the frontend talks to Django over the private Docker network and there is no trusted TLS/reverse-proxy hop.
+
 The proxy terminates public TLS, sends X-Forwarded-Proto: https, and is the only component allowed to reach backend port 8000. Keep database, Redis, object storage, and ClamAV private. Do not expose ports 3000, 8000, 5432, 6379, 9000, or 3310 publicly.
 
 ## 9. Prepare a server
@@ -308,5 +336,4 @@ Named volumes remain for reuse. List them before any intentional deletion:
 ~~~powershell
 docker volume ls --filter name=dentotime-
 ~~~
-
 
