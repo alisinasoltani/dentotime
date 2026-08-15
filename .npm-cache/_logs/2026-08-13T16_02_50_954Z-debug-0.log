@@ -1,0 +1,19 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Users\Albaloo\AppData\Roaming\npm\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.17.0
+2 info using node@v24.16.0
+3 silly config load:file:C:\Users\Albaloo\AppData\Roaming\npm\node_modules\npm\npmrc
+4 silly config load:file:D:\GitHub\dentotime\.npmrc
+5 silly config load:file:C:\Users\Albaloo\.npmrc
+6 silly config load:file:C:\Users\Albaloo\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm cache clean
+8 verbose argv "cache" "clean" "--force" "--cache" "D:\\GitHub\\dentotime\\.npm-cache"
+9 verbose logfile logs-max:10 dir:D:\GitHub\dentotime\.npm-cache\_logs\2026-08-13T16_02_50_954Z-
+10 verbose logfile D:\GitHub\dentotime\.npm-cache\_logs\2026-08-13T16_02_50_954Z-debug-0.log
+11 warn using --force Recommended protections disabled.
+12 silly logfile done cleaning log files
+13 verbose cwd D:\GitHub\dentotime
+14 verbose os Windows_NT 10.0.26200
+15 verbose node v24.16.0
+16 verbose npm  v11.17.0
+17 verbose exit 0
+18 info ok

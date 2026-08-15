@@ -1,0 +1,13 @@
+.git
+.github
+.env*
+!.env.example
+.next
+node_modules
+npm-debug.log*
+package.zip
+playwright-report
+structure.txt
+test-results
+tests
+tsconfig.tsbuildinfo
