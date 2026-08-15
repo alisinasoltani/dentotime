@@ -4,14 +4,21 @@ FROM python:3.12-slim-bookworm AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=10
 
 RUN groupadd --system --gid 10001 dentotime \
     && useradd --system --uid 10001 --gid dentotime --home-dir /app dentotime
 
 WORKDIR /app
 COPY requirements/production.lock /tmp/production.lock
-RUN python -m pip install --require-hashes --no-deps -r /tmp/production.lock
+RUN python -m pip install \
+    --require-hashes \
+    --no-deps \
+    --timeout 300 \
+    --retries 10 \
+    -r /tmp/production.lock
 
 COPY --chown=dentotime:dentotime . /app
 USER 10001:10001
