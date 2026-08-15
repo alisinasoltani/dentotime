@@ -1,0 +1,37 @@
+venv
+/venv
+venv/
+/venv/
+
+__pycache__
+/__pycache__
+__pycache__/
+/__pycache__/
+
+.pytest_cache
+/.pytest_cache
+.pytest_cache/
+/.pytest_cache/
+
+.env
+/.env.server
+/.env
+/.env/
+.env/
+
+# Local databases, uploaded patient/doctor data, logs, and generated inventories
+db.sqlite3
+db.sqlite3-*
+media/
+logs/
+*.log
+structure.txt
+
+# Tool and editor artifacts
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+sbom.cdx.json
+.idea/
+.vscode/
