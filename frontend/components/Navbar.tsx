@@ -1,101 +1,103 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import Link from 'next/link';
-import { Menu, X } from 'lucide-react';
-import Image from 'next/image';
+import { useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { CalendarDays, Menu, X } from "lucide-react";
 
-const navLinks = [
-  { name: 'صفحه اصلی', href: '/' },
-  { name: 'خدمات', href: '/#services' },
-  { name: 'ثبت نوبت', href: '/#slots' },
-  { name: 'تماس با ما', href: '/#contact' },
+import { Button } from "@/components/ui/button";
+import { useBookingExperience } from "@/components/booking/BookingExperience";
+
+const navItems = [
+  { label: "صفحه اصلی", href: "/" },
+  { label: "خدمات", href: "/#services" },
+  { label: "دندان‌پزشکان", href: "/doctors" },
+  { label: "فناوری‌ها", href: "/#technologies" },
+  { label: "تفاوت ما", href: "/#features" },
+  { label: "تماس با ما", href: "/#contact" },
 ];
 
 export default function Navbar() {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { openBooking, openLogin, isAuthenticated } = useBookingExperience();
 
   return (
-    <header className="sticky top-0 z-50 w-full bg-white/70 backdrop-blur-md border-b border-white/20 shadow-sm transition-all duration-300">
-      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        
-        {/* Right side (RTL Start) - Logo */}
-        <div className="flex shrink-0 items-center">
-          <Link href="/">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full">
-              <Image src={"/images/logo.png"} width={58} height={58} alt='' />
-            </div>
-          </Link>
-        </div>
+    <header className="sticky top-0 z-40 border-b border-[#DCEFF1] bg-white/95 backdrop-blur-xl" dir="rtl">
+      <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-3 px-4 sm:px-6 lg:h-[84px] lg:px-8">
+        <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="دنتوتایم، صفحه اصلی">
+          <Image src="/images/logo.png" alt="دنتوتایم" width={152} height={52} priority className="h-10 w-auto object-contain lg:h-12" />
+        </Link>
 
-        {/* Center - Desktop Navigation */}
-        <nav className="hidden md:flex items-center gap-8 font-medium">
-          {navLinks.map((link) => (
-            <Link 
-              key={link.name} 
-              href={link.href}
-              className="text-slate-700 hover:text-[#2993A3] transition-colors"
+        <nav className="mr-6 hidden flex-1 items-center justify-center gap-6 lg:flex" aria-label="منوی اصلی">
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="relative py-3 text-sm font-semibold text-[#444] transition-colors after:absolute after:inset-x-0 after:bottom-1 after:mx-auto after:h-0.5 after:w-0 after:rounded-full after:bg-[#2993A3] after:transition-all hover:text-[#2993A3] hover:after:w-full focus-visible:rounded focus-visible:outline-3 focus-visible:outline-[#75C1C7]/45"
             >
-              {link.name}
+              {item.label}
             </Link>
           ))}
         </nav>
 
-        {/* Left side (RTL End) - Desktop Actions */}
-        <div className="hidden md:flex items-center gap-6">
-          <Link 
-            href="/login" 
-            className="font-medium text-slate-700 hover:text-[#2993A3] transition-colors"
+        <div className="mr-auto flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={openLogin}
+            className="hidden h-11 rounded-full border-[#2993A3] bg-white px-5 font-bold text-[#2993A3] hover:bg-[#EFFAFB] sm:inline-flex"
           >
-            ورود
-          </Link>
-          <Link 
-            href="#contact" 
-            className="rounded-full bg-[linear-gradient(90deg,#2993A3_0%,#75C1C7_100%)] px-6 py-2.5 text-sm font-bold text-white shadow-md transition-transform hover:scale-105 hover:shadow-lg"
+            {isAuthenticated ? "حساب کاربری" : "ورود و ثبت نام"}
+          </Button>
+          <Button
+            type="button"
+            onClick={() => openBooking()}
+            className="h-10 rounded-full bg-[linear-gradient(90deg,#2993A3_0%,#75C1C7_100%)] px-3 font-bold text-white shadow-[0_8px_24px_rgba(41,147,163,0.22)] hover:brightness-95 sm:h-11 sm:px-5"
           >
-            درخواست مشاوره
-          </Link>
+            <CalendarDays data-icon="inline-start" aria-hidden="true" />
+            <span className="hidden sm:inline">رزرو نوبت</span>
+            <span className="sm:hidden">رزرو</span>
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={() => setMobileOpen((current) => !current)}
+            className="size-11 rounded-full text-[#2993A3] lg:hidden"
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-navigation"
+            aria-label={mobileOpen ? "بستن منو" : "باز کردن منو"}
+          >
+            {mobileOpen ? <X aria-hidden="true" /> : <Menu aria-hidden="true" />}
+          </Button>
         </div>
-
-        {/* Mobile Menu Toggle Button */}
-        <button 
-          className="md:hidden p-2 text-slate-700"
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          aria-label="Toggle menu"
-        >
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
       </div>
 
-      {/* Mobile Menu Dropdown */}
-      {isMobileMenuOpen && (
-        <div className="md:hidden absolute top-20 left-0 w-full bg-white/95 backdrop-blur-lg border-b border-slate-100 px-4 py-6 shadow-xl flex flex-col gap-4">
-          {navLinks.map((link) => (
-            <Link 
-              key={link.name} 
-              href={link.href}
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="block text-lg font-medium text-slate-700 p-2 hover:bg-slate-50 rounded-lg"
+      {mobileOpen && (
+        <nav id="mobile-navigation" className="border-t border-[#DCEFF1] bg-white px-4 pb-5 pt-3 lg:hidden" aria-label="منوی موبایل">
+          <div className="mx-auto grid max-w-[680px] grid-cols-2 gap-2">
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileOpen(false)}
+                className="flex min-h-11 items-center rounded-xl px-3 text-sm font-bold text-[#444] hover:bg-[#EFFAFB] hover:text-[#2993A3]"
+              >
+                {item.label}
+              </Link>
+            ))}
+            <button
+              type="button"
+              onClick={() => {
+                setMobileOpen(false);
+                openLogin();
+              }}
+              className="col-span-2 min-h-11 rounded-xl border border-[#2993A3] text-sm font-bold text-[#2993A3] sm:hidden"
             >
-              {link.name}
-            </Link>
-          ))}
-          <hr className="border-slate-100 my-2" />
-          <Link 
-            href="/login" 
-            onClick={() => setIsMobileMenuOpen(false)}
-            className="block text-lg font-medium text-slate-700 p-2"
-          >
-            ورود
-          </Link>
-          <Link 
-            href="#contact" 
-            onClick={() => setIsMobileMenuOpen(false)}
-            className="hidden md:inline-flex mt-2 w-fit items-center justify-center rounded-full bg-[linear-gradient(90deg,#2993A3_0%,#75C1C7_100%)] px-6 py-3 text-base font-bold text-white shadow-md"
-          >
-            درخواست مشاوره
-          </Link>
-        </div>
+              ورود و ثبت نام
+            </button>
+          </div>
+        </nav>
       )}
     </header>
   );

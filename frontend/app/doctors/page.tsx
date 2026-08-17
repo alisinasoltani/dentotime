@@ -1,10 +1,12 @@
-import { DoctorsDirectory } from "@/components/doctors/doctors-directory";
-import { getServerDoctorsPage } from "@/lib/server-public-doctors";
+import type { Metadata } from "next";
 
+import { AllDoctorsDirectory } from "@/components/doctors/AllDoctorsDirectory";
 
-export const dynamic = "force-dynamic";
+export const metadata: Metadata = {
+  title: "دندان‌پزشکان | دنتوتایم",
+  description: "مقایسه دندان‌پزشکان بر اساس تخصص، امتیاز و بیمه و رزرو نوبت آنلاین",
+};
 
-export default async function DoctorsPage() {
-  const initialPage = await getServerDoctorsPage();
-  return <DoctorsDirectory initialPage={initialPage} />;
+export default function DoctorsPage() {
+  return <AllDoctorsDirectory />;
 }

@@ -12,10 +12,10 @@ export default function Home() {
       <main>
         <Hero />
         <Services />
+        <DoctorsPreview />
         <BookingSection />
         <PioneeringTechnologies />
         <FeaturesSection />
-        <DoctorsPreview />
         <Footer />
       </main>
     </div>

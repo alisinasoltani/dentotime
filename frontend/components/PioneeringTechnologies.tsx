@@ -1,112 +1,61 @@
-import React from 'react';
-import { ArrowLeft } from 'lucide-react';
-import Image from 'next/image';
+import Image from "next/image";
+import { ArrowLeft } from "lucide-react";
 
-const technologiesData = [
+const technologies = [
   {
-    id: 1,
-    badge: "پیشرفته",
+    badge: "طراحی دیجیتال",
     title: "سیستم‌های پیشرفته CAD/CAM",
-    description: "بهره‌گیری از سیستم‌های تراش و ساخت دیجیتال به ما این امکان را می‌دهد که پیچیده‌ترین ساختارهای پروتزی، اباتمنت‌های اختصاصی و روکش‌های سرامیکی را با تطابق میکرونی تولید کنیم. این تکنولوژی سرعت تحویل ارستوریشن‌ها را بدون کوچک‌ترین سازش در کیفیت، به حداکثر می‌رساند.",
-    // در طراحی شما، ردیف اول و سوم تصویر در سمت راست و متن در چپ قرار دارد
-    imagePosition: "right", 
-    imageUrl: "/images/pioneering_technologies_image_2.png",
+    description: "طراحی و ساخت دیجیتال به لابراتوار اجازه می‌دهد روکش‌ها، اباتمنت‌های اختصاصی و پروتزهای سرامیکی را با تطابق دقیق و در زمان کوتاه‌تری تولید کند.",
+    image: "/images/pioneering_technologies_image_2.png",
   },
   {
-    id: 2,
-    badge: "دیجیتال",
+    badge: "اسکن سه‌بعدی",
     title: "اسکن دیجیتال دندان‌پزشکی",
-    description: "انتقال دقیق آناتومی دهان به محیط نرم‌افزاری، اولین گام در درمان‌های موفق است. با پذیرش و پردازش سریع فایل‌های اسکنر داخل‌دهانی، فرآیند قالب‌گیری سنتی و ناخوشایند حذف شده و بستر طراحی سه‌بعدی با بالاترین میزان هم‌پوشانی و انحنای طبیعی دندان فراهم می‌گردد.",
-    // ردیف دوم تصویر در سمت چپ قرار دارد
-    imagePosition: "left",
-    imageUrl: "/images/pioneering_technologies_image_1.png",
+    description: "فایل اسکن داخل‌دهانی، آناتومی دهان را بدون قالب‌گیری ناخوشایند به محیط طراحی منتقل می‌کند و ارتباط میان پزشک و لابراتوار را شفاف‌تر می‌سازد.",
+    image: "/images/pioneering_technologies_image_1.png",
   },
   {
-    id: 3,
-    badge: "نوآورانه",
-    title: "جریان‌های کاری نوین در دندان‌پزشکی",
-    description: "ما فراتر از روش‌های معمول، به سوی آینده دندان‌پزشکی گام برمی‌داریم. با همگام‌سازی هوش مصنوعی در طراحی و چاپ سه‌بعدی پیشرفته، زنجیره‌ای یکپارچه از تشخیص تا ساخت نهایی ایجاد کرده‌ایم تا بهینه‌ترین، ایمن‌ترین و بادوام‌ترین راهکارهای درمانی را در اختیارتان قرار دهیم.",
-    imagePosition: "right",
-    imageUrl: "/images/pioneering_technologies_image_3.png",
-  }
+    badge: "ساخت افزایشی",
+    title: "چاپ سه‌بعدی و جریان کاری یکپارچه",
+    description: "هماهنگی نرم‌افزار طراحی، چاپ سه‌بعدی و کنترل کیفی چندمرحله‌ای، خطای انسانی را کاهش می‌دهد و امکان تکرارپذیری نتیجه را فراهم می‌کند.",
+    image: "/images/pioneering_technologies_image_3.png",
+  },
 ];
 
 export default function PioneeringTechnologies() {
   return (
-    <section 
-      dir="rtl" 
-      className="w-full py-16 md:py-24 px-4 sm:px-6 lg:px-28 bg-[linear-gradient(180deg,#EFFAFB_0%,#EFF9FB_30%,#F0FAFC_68%,#F0F9FA_100%)]"
-    >
-      <div className="max-w-300 mx-auto">
-        
-        {/* ================= Header Section ================= */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center px-4 gap-6 lg:gap-12">
-          {/* Title (Right visually in RTL) */}
-          <h2 className="w-full lg:w-5/12 text-3xl text-center md:text-right md:text-4xl lg:text-5xl font-extrabold text-slate-900 leading-tight">
-            فناوری‌ها و روش‌های<br className="hidden md:block" />
-            <span className="block mt-2">پیشگام در دندان‌سازی</span>
+    <section id="technologies" className="scroll-mt-28 bg-[linear-gradient(180deg,#EFFAFB_0%,#EFF9FB_30%,#F0FAFC_68%,#F0F9FA_100%)] py-16 sm:py-20 lg:py-28" dir="rtl">
+      <div className="mx-auto max-w-[1180px] px-4 sm:px-6">
+        <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
+          <h2 className="text-[28px] font-black leading-[1.5] text-[#111] sm:text-[42px] sm:leading-[1.35]">
+            فناوری‌ها و روش‌های پیشگام در دندان‌سازی
           </h2>
-          
-          {/* Subtitle (Left visually in RTL) */}
-          <p className="w-full lg:w-7/12 text-slate-600 text-base md:text-lg leading-relaxed text-center md:text-right">
-            ادغام سیستم‌های پیشرفته CAD/CAM با رویکردهای نوین تشخیصی، استانداردهای تازه‌ای را در دقت ساخت پروتزهای دندانی تعریف کرده است. ما با اتکا بر اتوماسیون دیجیتال و حذف خطاهای سنتی، جریان کاری پیوسته و هوشمندی را برای دندان‌پزشکان فراهم آورده‌ایم که نتیجه آن، ارتقای کیفیت درمان و رضایت کامل بیمار است.
+          <p className="max-w-[690px] text-[15px] leading-8 text-[#555] sm:text-base lg:justify-self-end">
+            از ثبت اطلاعات درمان تا ساخت نهایی، جریان دیجیتال یکپارچه دقت، سرعت و قابلیت پیگیری هر سفارش را افزایش می‌دهد؛ بدون آن‌که کیفیت بالینی قربانی سرعت شود.
           </p>
         </div>
 
-        {/* ================= Cards Section ================= */}
-        <div className="mt-10 lg:mt-[80px] flex flex-col gap-8 lg:gap-[64px] px-2 lg:px-16">
-          {technologiesData.map((item) => (
-            <div 
-              key={item.id}
-              className={`flex flex-col lg:flex-row items-stretch rounded-[40px] border-[3px] border-[#9BD8E4] bg-[#F0FAFC]/40 overflow-hidden shadow-sm transition-transform hover:-translate-y-1 duration-300 ${item.imagePosition === 'left' ? 'lg:flex-row-reverse' : ''}`}
+        <div className="mt-10 flex flex-col gap-6 lg:mt-16 lg:gap-8">
+          {technologies.map((technology, index) => (
+            <article
+              key={technology.title}
+              className={`grid overflow-hidden rounded-[24px] border-2 border-[#9BD8E4] bg-white/45 shadow-[0_16px_45px_rgba(57,143,156,0.09)] lg:min-h-[360px] lg:grid-cols-2 ${index % 2 === 1 ? "lg:[&_.tech-media]:order-2" : ""}`}
             >
-              
-              {/* Image Container (Placeholder for Next/Image) */}
-              <div className="w-full lg:w-5/12 h-[250px] sm:h-[300px] lg:h-auto relative bg-slate-200">
-                {/* هنگام اتصال تصویر واقعی، می‌توانید از تگ زیر استفاده کنید:
-                  <Image src="..." alt={item.title} fill className="object-cover" />
-                */}
-                <div className="absolute inset-0 flex items-center justify-center text-slate-400 font-medium">
-                  <Image src={item.imageUrl} fill sizes="(min-width: 1024px) 42vw, 100vw" alt='' />
-                </div>
+              <div className="tech-media relative min-h-[240px] sm:min-h-[320px] lg:min-h-full">
+                <Image src={technology.image} alt={technology.title} fill sizes="(min-width: 1024px) 50vw, 100vw" className="object-cover" />
               </div>
-
-              {/* Content Container */}
-              <div className="w-full lg:w-7/12 p-8 lg:p-12 flex flex-col justify-center">
-                
-                {/* Badge */}
-                <div className="mb-6">
-                  <span className="inline-block bg-[#DAEDF3] text-[#2993A3] px-4 py-1.5 rounded-full text-sm font-bold">
-                    {item.badge}
-                  </span>
-                </div>
-
-                {/* Title */}
-                <h3 className="text-2xl md:text-3xl font-bold text-slate-900 mb-4">
-                  {item.title}
-                </h3>
-
-                {/* Description */}
-                <p className="text-slate-600 text-base md:text-lg leading-relaxed mb-8">
-                  {item.description}
-                </p>
-
-                {/* Read More Link */}
-                <div className="mt-auto">
-                  <a 
-                    href="#" 
-                    className="inline-flex items-center gap-2 text-[#2993A3] font-bold text-lg group transition-all"
-                  >
-                    مشاهده اطلاعات بیشتر
-                    <ArrowLeft className="w-5 h-5 transition-transform group-hover:-translate-x-1" />
-                  </a>
-                </div>
-
+              <div className="flex flex-col justify-center p-6 sm:p-10 lg:p-12">
+                <span className="w-fit rounded-full bg-[#DAEDF3] px-4 py-1.5 text-sm font-bold text-[#2993A3]">{technology.badge}</span>
+                <h3 className="mt-5 text-2xl font-black leading-9 text-[#1B1B1B] sm:text-3xl">{technology.title}</h3>
+                <p className="mt-4 text-[15px] leading-8 text-[#555] sm:text-base">{technology.description}</p>
+                <a href="#contact" className="mt-7 inline-flex min-h-11 w-fit items-center gap-2 text-sm font-extrabold text-[#2993A3] hover:underline">
+                  مشاهده اطلاعات بیشتر
+                  <ArrowLeft className="size-4" aria-hidden="true" />
+                </a>
               </div>
-            </div>
+            </article>
           ))}
         </div>
-
       </div>
     </section>
   );
