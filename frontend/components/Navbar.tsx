@@ -11,7 +11,7 @@ import { useBookingExperience } from "@/components/booking/BookingExperience";
 const navItems = [
   { label: "صفحه اصلی", href: "/" },
   { label: "خدمات", href: "/#services" },
-  { label: "دندان‌پزشکان", href: "/doctors" },
+  { label: "پزشکان", href: "/doctors" },
   { label: "فناوری‌ها", href: "/#technologies" },
   { label: "تفاوت ما", href: "/#features" },
   { label: "تماس با ما", href: "/#contact" },
@@ -22,7 +22,8 @@ export default function Navbar() {
   const { openBooking, openLogin, isAuthenticated } = useBookingExperience();
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[#DCEFF1] bg-white/95 backdrop-blur-xl" dir="rtl">
+    <>
+    <header className="fixed inset-x-0 top-0 z-40 border-b border-[#DCEFF1] bg-white/95 backdrop-blur-xl" dir="rtl">
       <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-3 px-4 sm:px-6 lg:h-[84px] lg:px-8">
         <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="دنتوتایم، صفحه اصلی">
           <Image src="/images/logo.png" alt="دنتوتایم" width={152} height={52} priority className="h-10 w-auto object-contain lg:h-12" />
@@ -100,5 +101,7 @@ export default function Navbar() {
         </nav>
       )}
     </header>
+    <div className="h-[65px] lg:h-[85px]" aria-hidden="true" />
+    </>
   );
 }

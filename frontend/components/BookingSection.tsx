@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarDays, CheckCircle2, Clock3, ShieldCheck, Stethoscope } from "lucide-react";
+import { CheckCircle2, ShieldCheck, Stethoscope } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,12 +13,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useBookingExperience } from "@/components/booking/BookingExperience";
-import { services } from "@/lib/site-data";
+import { insurers, services } from "@/lib/site-data";
 
 export default function BookingSection() {
   const [service, setService] = useState("");
-  const [date, setDate] = useState("چهارشنبه، ۲۹ مرداد ۱۴۰۵");
-  const [time, setTime] = useState("۱۱:۰۰");
+  const [insurance, setInsurance] = useState("");
   const { openBooking } = useBookingExperience();
 
   return (
@@ -28,7 +27,7 @@ export default function BookingSection() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <h2 className="text-[28px] font-black text-[#111] sm:text-[40px]">رزرو نوبت آنلاین</h2>
-              <p className="mt-2 text-[15px] leading-7 text-[#666] sm:text-base">سه انتخاب کوتاه تا مشاهده پزشکان و زمان‌های آزاد</p>
+              <p className="mt-2 text-[15px] leading-7 text-[#666] sm:text-base">خدمت و بیمه را انتخاب کنید تا پزشکان مرتبط را ببینید.</p>
             </div>
             <p className="inline-flex items-center gap-2 text-sm text-[#52767C]">
               <ShieldCheck className="size-5 text-[#2993A3]" aria-hidden="true" />
@@ -36,10 +35,16 @@ export default function BookingSection() {
             </p>
           </div>
 
-          <div className="mt-8 grid gap-3 lg:grid-cols-[1.4fr_1fr_0.8fr_auto] lg:items-end">
+          <div className="mt-8 grid gap-3 lg:grid-cols-[1.4fr_1fr_auto] lg:items-end">
             <label className="flex flex-col gap-2 text-sm font-bold text-[#444]">
               <span className="inline-flex items-center gap-2"><Stethoscope className="size-4 text-[#2993A3]" /> ۱. انتخاب خدمت</span>
-              <Select value={service} onValueChange={setService}>
+              <Select
+                value={service}
+                onValueChange={(value) => {
+                  setService(value);
+                  setInsurance("");
+                }}
+              >
                 <SelectTrigger className="h-14 w-full rounded-2xl border-[#BFDDE2] bg-white px-4 text-right shadow-[0_8px_22px_rgba(50,139,154,0.06)]">
                   <SelectValue placeholder="خدمت مورد نظر" />
                 </SelectTrigger>
@@ -53,31 +58,15 @@ export default function BookingSection() {
               </Select>
             </label>
 
-            <label className="flex flex-col gap-2 text-sm font-bold text-[#444]">
-              <span className="inline-flex items-center gap-2"><CalendarDays className="size-4 text-[#2993A3]" /> ۲. انتخاب تاریخ</span>
-              <Select value={date} onValueChange={setDate}>
+            <label className="flex flex-col gap-2 text-sm font-bold text-[#444]" data-disabled={!service}>
+              <span className="inline-flex items-center gap-2"><ShieldCheck className="size-4 text-[#2993A3]" /> ۲. انتخاب نوع بیمه</span>
+              <Select value={insurance} onValueChange={setInsurance} disabled={!service}>
                 <SelectTrigger className="h-14 w-full rounded-2xl border-[#BFDDE2] bg-white px-4 text-right shadow-[0_8px_22px_rgba(50,139,154,0.06)]">
-                  <SelectValue />
+                  <SelectValue placeholder={service ? "بیمه تحت پوشش" : "ابتدا خدمت را انتخاب کنید"} />
                 </SelectTrigger>
                 <SelectContent position="popper" align="start">
                   <SelectGroup>
-                    {["سه‌شنبه، ۲۸ مرداد ۱۴۰۵", "چهارشنبه، ۲۹ مرداد ۱۴۰۵", "پنج‌شنبه، ۳۰ مرداد ۱۴۰۵", "شنبه، ۱ شهریور ۱۴۰۵"].map((item) => (
-                      <SelectItem key={item} value={item}>{item}</SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </label>
-
-            <label className="flex flex-col gap-2 text-sm font-bold text-[#444]">
-              <span className="inline-flex items-center gap-2"><Clock3 className="size-4 text-[#2993A3]" /> ۳. انتخاب ساعت</span>
-              <Select value={time} onValueChange={setTime}>
-                <SelectTrigger className="h-14 w-full rounded-2xl border-[#BFDDE2] bg-white px-4 text-right shadow-[0_8px_22px_rgba(50,139,154,0.06)]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent position="popper" align="start">
-                  <SelectGroup>
-                    {["۰۹:۰۰", "۱۰:۳۰", "۱۱:۰۰", "۱۴:۰۰", "۱۵:۳۰"].map((item) => (
+                    {insurers.map((item) => (
                       <SelectItem key={item} value={item}>{item}</SelectItem>
                     ))}
                   </SelectGroup>
@@ -87,8 +76,8 @@ export default function BookingSection() {
 
             <Button
               type="button"
-              disabled={!service}
-              onClick={() => openBooking(service)}
+              disabled={!service || !insurance}
+              onClick={() => openBooking(service, insurance)}
               className="h-14 rounded-full bg-[linear-gradient(90deg,#2993A3_0%,#75C1C7_100%)] px-7 text-base font-bold text-white shadow-[0_10px_26px_rgba(41,147,163,0.22)] hover:brightness-95"
             >
               <CheckCircle2 data-icon="inline-start" />

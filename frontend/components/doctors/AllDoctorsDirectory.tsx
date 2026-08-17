@@ -33,7 +33,7 @@ export function AllDoctorsDirectory() {
     <main className="min-h-screen bg-[linear-gradient(180deg,#F1FAFB_0%,#FFFFFF_35%)] pb-20" dir="rtl">
       <section className="py-12 sm:py-16">
         <div className="mx-auto max-w-[1180px] px-4 sm:px-6">
-          <h1 className="text-[34px] font-black text-[#111] sm:text-[48px]">دندان‌پزشکان دنتوتایم</h1>
+          <h1 className="text-[34px] font-black text-[#111] sm:text-[48px]">پزشکان دنتوتایم</h1>
           <p className="mt-4 max-w-[720px] text-[15px] leading-8 text-[#666] sm:text-base">تخصص، امتیاز کاربران، محل فعالیت و بیمه‌های طرف قرارداد را پیش از رزرو مقایسه کنید.</p>
 
           <div className="mt-8 grid gap-3 rounded-[22px] border border-[#D5EAED] bg-white p-4 shadow-[0_14px_40px_rgba(50,139,154,0.08)] md:grid-cols-[1fr_0.55fr]">

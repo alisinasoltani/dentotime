@@ -371,7 +371,8 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                                     <div className="relative">
                                         <select
                                             {...register("service")}
-                                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 outline-none focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3] transition-all appearance-none"
+                                            dir="rtl"
+                                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-right outline-none focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3] transition-all appearance-none"
                                         >
                                             {SERVICES.map(srv => <option key={srv} value={srv}>{srv}</option>)}
                                         </select>
@@ -417,7 +418,8 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                                                 value={selectedSlotId || ""}
                                                 onChange={handleTimeChange}
                                                 disabled={!watchDate || isLoadingSlots || availableHoursForSelectedDate.length === 0}
-                                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 outline-none focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3] transition-all appearance-none disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed"
+                                                dir="rtl"
+                                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-right outline-none focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3] transition-all appearance-none disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed"
                                             >
                                                 <option value="">{isLoadingSlots ? 'در حال بررسی...' : 'ساعت'}</option>
                                                 {availableHoursForSelectedDate.map(slot => (

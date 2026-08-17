@@ -62,7 +62,7 @@ type BookingDraft = {
 };
 
 type BookingExperienceContextValue = {
-  openBooking: (serviceSlug?: string) => void;
+  openBooking: (serviceSlug?: string, insurance?: string) => void;
   openLogin: () => void;
   isAuthenticated: boolean;
 };
@@ -102,14 +102,22 @@ export function BookingExperienceProvider({ children }: { children: ReactNode })
   const [draft, setDraft] = useState<BookingDraft>(emptyBooking);
 
   const openBooking = useCallback(
-    (serviceSlug?: string) => {
+    (serviceSlug?: string, insurance?: string) => {
       setDraft((current) => ({
         ...current,
         service: serviceSlug ?? current.service,
-        insurance: serviceSlug && serviceSlug !== current.service ? "" : current.insurance,
-        dentistId: serviceSlug && serviceSlug !== current.service ? "" : current.dentistId,
+        insurance:
+          insurance ?? (serviceSlug && serviceSlug !== current.service ? "" : current.insurance),
+        dentistId:
+          serviceSlug && insurance
+            ? ""
+            : serviceSlug && serviceSlug !== current.service
+              ? ""
+              : current.dentistId,
+        date: serviceSlug && insurance ? "" : current.date,
+        time: serviceSlug && insurance ? "" : current.time,
       }));
-      setBookingStep(1);
+      setBookingStep(serviceSlug && insurance ? 2 : 1);
       if (isAuthenticated) {
         setMode("booking");
       } else {
@@ -128,7 +136,6 @@ export function BookingExperienceProvider({ children }: { children: ReactNode })
   const finishAuthentication = () => {
     setIsAuthenticated(true);
     if (authIntent === "booking") {
-      setBookingStep(1);
       setMode("booking");
     } else {
       setMode("closed");
@@ -211,6 +218,7 @@ export function BookingExperienceProvider({ children }: { children: ReactNode })
                 setDraft((current) => ({ ...current, insurance, dentistId: "", date: "", time: "" }));
                 setBookingStep(2);
               }}
+              onContinue={() => setBookingStep(2)}
               onDentist={(dentistId) => {
                 setDraft((current) => ({ ...current, dentistId }));
                 setBookingStep(3);
@@ -454,6 +462,7 @@ function BookingPanel({
   onBack,
   onService,
   onInsurance,
+  onContinue,
   onDentist,
   onDate,
   onTime,
@@ -465,6 +474,7 @@ function BookingPanel({
   onBack: () => void;
   onService: (value: string) => void;
   onInsurance: (value: string) => void;
+  onContinue: () => void;
   onDentist: (value: string) => void;
   onDate: (value: string) => void;
   onTime: (value: string) => void;
@@ -502,45 +512,57 @@ function BookingPanel({
       </ol>
 
       {step === 1 && (
-        <FieldGroup className="gap-4 rounded-[20px] border border-[#D7EDF0] bg-[#F8FDFD] p-4">
-          <Field>
-            <FieldLabel>نوع خدمت</FieldLabel>
-            <Select value={draft.service} onValueChange={onService}>
-              <SelectTrigger className="h-12 w-full rounded-2xl border-[#BFDDE2] bg-white px-4 text-right">
-                <SelectValue placeholder="خدمت مورد نظر را انتخاب کنید" />
-              </SelectTrigger>
-              <SelectContent position="popper" align="start">
-                <SelectGroup>
-                  {services.map((service) => (
-                    <SelectItem key={service.slug} value={service.slug}>
-                      {service.title}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field data-disabled={!draft.service}>
-            <FieldLabel>نوع بیمه تحت پوشش</FieldLabel>
-            <Select value={draft.insurance} onValueChange={onInsurance} disabled={!draft.service}>
-              <SelectTrigger className="h-12 w-full rounded-2xl border-[#BFDDE2] bg-white px-4 text-right">
-                <SelectValue placeholder={draft.service ? "بیمه را انتخاب کنید" : "ابتدا نوع خدمت را انتخاب کنید"} />
-              </SelectTrigger>
-              <SelectContent position="popper" align="start">
-                <SelectGroup>
-                  {insurers.map((insurer) => (
-                    <SelectItem key={insurer} value={insurer}>
-                      {insurer}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <FieldDescription className="text-right">
-              گزینه «آزاد» همه پزشکان ارائه‌دهنده این خدمت را نمایش می‌دهد.
-            </FieldDescription>
-          </Field>
-        </FieldGroup>
+        <div className="flex flex-col gap-3">
+          <FieldGroup className="gap-4 rounded-[20px] border border-[#D7EDF0] bg-[#F8FDFD] p-4">
+            <Field>
+              <FieldLabel>نوع خدمت</FieldLabel>
+              <Select value={draft.service} onValueChange={onService}>
+                <SelectTrigger className="h-12 w-full rounded-2xl border-[#BFDDE2] bg-white px-4 text-right">
+                  <SelectValue placeholder="خدمت مورد نظر را انتخاب کنید" />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  <SelectGroup>
+                    {services.map((service) => (
+                      <SelectItem key={service.slug} value={service.slug}>
+                        {service.title}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field data-disabled={!draft.service}>
+              <FieldLabel>نوع بیمه تحت پوشش</FieldLabel>
+              <Select value={draft.insurance} onValueChange={onInsurance} disabled={!draft.service}>
+                <SelectTrigger className="h-12 w-full rounded-2xl border-[#BFDDE2] bg-white px-4 text-right">
+                  <SelectValue placeholder={draft.service ? "بیمه را انتخاب کنید" : "ابتدا نوع خدمت را انتخاب کنید"} />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  <SelectGroup>
+                    {insurers.map((insurer) => (
+                      <SelectItem key={insurer} value={insurer}>
+                        {insurer}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <FieldDescription className="text-right">
+                گزینه «آزاد» همه پزشکان ارائه‌دهنده این خدمت را نمایش می‌دهد.
+              </FieldDescription>
+            </Field>
+          </FieldGroup>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              disabled={!draft.service || !draft.insurance}
+              onClick={onContinue}
+              className="h-11 min-w-28 rounded-full px-6 font-bold"
+            >
+              ادامه
+            </Button>
+          </div>
+        </div>
       )}
 
       {step === 2 && (
