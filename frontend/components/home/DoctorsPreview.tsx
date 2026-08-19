@@ -40,7 +40,7 @@ export default function DoctorsPreview() {
         <div className="mx-auto w-full px-4 sm:px-6">
           <div className="mb-8 flex items-end justify-between gap-4 px-2 md:px-8">
             <div>
-              <h2 id="doctors-title" className="text-[28px] font-black text-[#111] sm:text-[40px]">دندان‌پزشکان برتر</h2>
+              <h2 id="doctors-title" className="text-[28px] font-black text-[#111] sm:text-[36px]">دندان‌پزشکان برتر</h2>
               <p className="mt-3 max-w-[620px] text-[15px] leading-7 text-[#666] sm:text-base">
                 امتیاز هر پزشک از میانگین تمام نظرهای ثبت‌شده محاسبه می‌شود.
               </p>
