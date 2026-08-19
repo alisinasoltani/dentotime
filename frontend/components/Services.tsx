@@ -65,19 +65,19 @@ export default function Services() {
   };
 
   return (
-    <section id="services" className="scroll-mt-28 py-16 sm:py-20 lg:py-28" dir="rtl">
-      <div className="mx-auto max-w-[1180px] px-4 sm:px-6">
-        <div className="mb-8 flex items-end justify-between gap-4">
+    <section id="services" className="w-full scroll-mt-28 py-12 sm:py-16 lg:py-20" dir="rtl">
+      <div className="mx-auto w-full px-4 sm:px-6">
+        <div className="mb-8 px-2 md:px-8 flex flex-col md:flex-row md:items-end justify-between gap-0 md:gap-4">
           <div>
-            <h2 className="text-[28px] font-black text-[#111] sm:text-[40px]">خدمات و تخصص‌ها</h2>
+            <h2 className="text-[28px] font-black text-[#111] sm:text-[36px]">خدمات و تخصص‌ها</h2>
             <p className="mt-3 max-w-[620px] text-[15px] leading-7 text-[#666] sm:text-base">
               خدمت مورد نیازتان را انتخاب کنید تا پزشکان و مراکز درمانی مرتبط را ببینید.
             </p>
-            <Link href="#services" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-[#2993A3] hover:underline">
-              <ArrowRight className="size-4" aria-hidden="true" />
-              مشاهده همه
-            </Link>
           </div>
+          <Link href="#services" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-[#2993A3] hover:underline">
+            مشاهده همه
+            <ArrowLeft className="size-4" aria-hidden="true" />
+          </Link>
         </div>
 
         <div className="relative">
@@ -87,7 +87,7 @@ export default function Services() {
           <div
             ref={viewportRef}
             onScroll={keepInfinite}
-            className="dento-scrollbar-hidden flex snap-x snap-mandatory gap-4 overflow-x-auto px-2 py-3"
+            className="dento-scrollbar-hidden flex snap-x snap-mandatory gap-4 overflow-x-auto px-2 pt-3 pb-12"
             style={{ direction: "ltr" }}
           >
             {loopedServices.map((service, index) => {
@@ -96,7 +96,7 @@ export default function Services() {
                 <Link
                   key={`${service.slug}-${index}`}
                   href={`/services/${service.slug}`}
-                  className="group min-h-[248px] w-[78vw] max-w-[280px] shrink-0 snap-start rounded-[22px] border border-[#B1B1B1] bg-white p-6 text-right shadow-[0_12px_36px_rgba(50,139,154,0.08)] transition duration-300 hover:-translate-y-1 hover:border-[#75C1C7] hover:bg-[linear-gradient(145deg,#F5FCFC_0%,#EEF9FB_36%,#E6F5FA_70%,#DFF0F7_100%)] hover:shadow-[0_18px_42px_rgba(50,139,154,0.15)] focus-visible:outline-3 focus-visible:outline-[#75C1C7]/50"
+                  className="group min-h-[248px] w-[78vw] max-w-[280px] shrink-0 snap-start rounded-[22px] border border-[#B1B1B1] bg-white p-6 text-right transition duration-300 hover:-translate-y-1 hover:border-[#75C1C7] hover:bg-[linear-gradient(145deg,#F5FCFC_0%,#EEF9FB_36%,#E6F5FA_70%,#DFF0F7_100%)] hover:shadow-[0_18px_42px_rgba(50,139,154,0.15)] focus-visible:outline-3 focus-visible:outline-[#75C1C7]/50"
                   dir="rtl"
                 >
                   <span className="flex size-14 items-center justify-center rounded-[18px] bg-[#E8F7F8] text-[#2993A3] transition group-hover:bg-white">
