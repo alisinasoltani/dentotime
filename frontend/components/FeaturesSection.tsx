@@ -25,33 +25,36 @@ export default function FeaturesSection() {
       <div className="mx-auto max-w-[1080px] px-4 sm:px-6">
         <div className="grid items-center gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
           <div>
-            <h2 className="text-[28px] font-black leading-[1.5] text-[#111] sm:text-[42px] sm:leading-[1.35]">چه چیزی ما را متفاوت کرده؟</h2>
+            <h2 className="text-[28px] font-black leading-[1.5] text-[#111] sm:text-[36px] sm:leading-[1.35]">چه چیزی ما را متفاوت کرده؟</h2>
             <p className="mt-5 text-[15px] leading-8 text-[#555] sm:text-base">
               تفاوت دنتوتایم در ترکیب تصمیم‌گیری شفاف برای بیمار، همکاری نزدیک پزشک و لابراتوار و کنترل کیفی قابل پیگیری است. نتیجه باید هم از نظر بالینی قابل اعتماد باشد و هم برای بیمار قابل فهم.
             </p>
             <div className="mt-8 flex items-center gap-4 border-t border-[#DCEBED] pt-6">
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-[#E1FCFC] text-[#2993A3]">
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-sm bg-[#E1FCFC] text-[#2993A3]">
                 <Microscope className="size-6" aria-hidden="true" />
               </span>
               <p className="text-sm leading-7 text-[#555]">هر مرحله یک مسئول مشخص، معیار کنترل و نتیجه قابل ثبت دارد.</p>
             </div>
           </div>
-          <div className="relative aspect-[4/3] overflow-hidden rounded-[24px] bg-[#EFF9FB] shadow-[0_22px_60px_rgba(50,139,154,0.14)]">
+          <div className="relative aspect-[4/3] overflow-hidden rounded-sm bg-[#EFF9FB] shadow-[0_22px_60px_rgba(50,139,154,0.14)]">
             <Image src="/images/features_image_2.png" alt="تکنسین دندان‌سازی در حال بررسی پروتز" fill sizes="(min-width: 1024px) 55vw, 100vw" className="object-cover" />
           </div>
         </div>
 
-        <div className="mt-12 grid overflow-hidden rounded-[24px] border border-[#CAE7EB] bg-[linear-gradient(135deg,#F4FCFC_0%,#E1F4F7_100%)] lg:mt-24 lg:grid-cols-[1.08fr_0.92fr]">
+        <div className="mt-12 grid overflow-hidden rounded-sm border border-[#CAE7EB] bg-[linear-gradient(135deg,#F4FCFC_0%,#E1F4F7_100%)] lg:mt-24 lg:grid-cols-[1.08fr_0.92fr]">
           <div className="relative min-h-[300px] lg:min-h-[520px]">
             <Image src="/images/features_image_3.png" alt="فرآیند دیجیتال ساخت پروتز دندانی" fill sizes="(min-width: 1024px) 55vw, 100vw" className="object-cover" />
           </div>
           <div className="flex flex-col justify-center gap-7 p-6 sm:p-10 lg:p-12">
-            <h3 className="text-2xl font-black leading-9 text-[#222] sm:text-3xl">از ثبت اسکن تا تحویل، یک مسیر قابل اعتماد</h3>
+            <h3 className="text-2xl font-black leading-9 text-[#222]">
+              از ثبت اسکن تا تحویل، <br />
+              یک مسیر قابل اعتماد
+            </h3>
             {featureItems.map((item) => {
               const Icon = item.icon;
               return (
                 <div key={item.title} className="flex items-start gap-4">
-                  <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white text-[#2993A3] shadow-[0_8px_24px_rgba(50,139,154,0.1)]">
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-sm bg-white text-[#2993A3] shadow-[0_8px_24px_rgba(50,139,154,0.1)]">
                     <Icon className="size-5" aria-hidden="true" />
                   </span>
                   <div>
@@ -65,7 +68,7 @@ export default function FeaturesSection() {
         </div>
 
         <div className="mt-12 grid items-center gap-8 lg:mt-24 lg:grid-cols-2 lg:gap-14">
-          <div className="relative aspect-[4/3] overflow-hidden rounded-[24px] bg-[#EFF9FB]">
+          <div className="relative aspect-[4/3] overflow-hidden rounded-sm bg-[#EFF9FB]">
             <Image src="/images/features_image_1.png" alt="کنترل کیفیت پروتز دندانی" fill sizes="(min-width: 1024px) 50vw, 100vw" className="object-cover" />
           </div>
           <div>
