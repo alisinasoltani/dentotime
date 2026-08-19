@@ -90,28 +90,32 @@ export default function DoctorsPreview() {
         </div>
       </section>
 
-      <section className="overflow-hidden border-y border-[#E0F1F3] bg-[#F8FDFD] py-10 sm:py-12" dir="rtl" aria-labelledby="insurance-title">
-        <div className="mx-auto max-w-[1180px] px-4 sm:px-6">
-          <div className="mb-7 flex items-center gap-3">
-            <span className="flex size-11 items-center justify-center rounded-2xl bg-[#E1FCFC] text-[#2993A3]">
-              <ShieldCheck className="size-6" aria-hidden="true" />
-            </span>
-            <div>
-              <h2 id="insurance-title" className="text-2xl font-black text-[#111] sm:text-3xl">بیمه‌های تحت پوشش</h2>
-              <p className="mt-1 text-sm text-[#777]">پوشش دقیق هر خدمت در مرحله رزرو بررسی می‌شود.</p>
-            </div>
-            <a href="#booking" className="mr-auto inline-flex min-h-11 items-center gap-2 text-sm font-bold text-[#2993A3] hover:underline">
-              <ArrowRight className="size-4" aria-hidden="true" /> مشاهده همه
-            </a>
-          </div>
-        </div>
-        <div className="dento-marquee-mask overflow-hidden" aria-label="فهرست بیمه‌های تحت پوشش">
-          <div className="dento-insurance-marquee flex w-max items-center gap-3 px-3" role="list">
-            {marqueeInsurers.map((insurer, index) => (
-              <div key={`${insurer}-${index}`} role="listitem" className="flex h-16 min-w-[190px] items-center justify-center rounded-2xl border border-[#D6ECEF] bg-white px-6 text-center text-sm font-extrabold text-[#396A72] shadow-[0_8px_24px_rgba(54,150,165,0.07)]">
-                {insurer}
+      <section className="overflow-hidden bg-[#fff]
+      bg-[linear-gradient(to_right,#ffffff_0%,#ffffff_25%,#9ce3e3_50%,#ffffff_75%,#ffffff_100%)] p-[1px] rounded-xl" dir="rtl" aria-labelledby="insurance-title">
+        <div className="w-full h-full bg-white py-10 sm:py-12">
+          <div className="mx-auto max-w-[1180px] px-4 sm:px-6">
+            <div className="mb-7 flex items-center gap-3">
+              <span className="flex size-11 items-center justify-center rounded-2xl bg-[#E1FCFC] text-[#2993A3]">
+                <ShieldCheck className="size-6" aria-hidden="true" />
+              </span>
+              <div>
+                <h2 id="insurance-title" className="text-2xl font-black text-[#111]">بیمه‌های تحت پوشش</h2>
+                <p className="mt-1 text-sm text-[#777]">پوشش دقیق هر خدمت در مرحله رزرو بررسی می‌شود.</p>
               </div>
-            ))}
+              <a href="#booking" className="mr-auto inline-flex min-h-11 items-center gap-2 text-sm font-bold text-[#2993A3] hover:underline">
+                مشاهده همه
+                <ArrowLeft className="size-4" aria-hidden="true" />
+              </a>
+            </div>
+          </div>
+          <div className="dento-marquee-mask overflow-hidden" aria-label="فهرست بیمه‌های تحت پوشش">
+            <div className="dento-insurance-marquee flex w-max items-center gap-3 px-3" role="list">
+              {marqueeInsurers.map((insurer, index) => (
+                <div key={`${insurer}-${index}`} role="listitem" className="flex h-16 min-w-[190px] items-center justify-center rounded-sm border border-[#D6ECEF] bg-white px-6 text-center text-sm font-extrabold text-[#396A72] shadow-[0_8px_24px_rgba(54,150,165,0.07)]">
+                  {insurer}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
