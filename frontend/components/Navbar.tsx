@@ -24,9 +24,9 @@ export default function Navbar() {
   return (
     <>
     <header className="fixed inset-x-0 top-0 z-40 border-b border-[#DCEFF1] bg-white/95 backdrop-blur-xl" dir="rtl">
-      <div className="mx-auto flex h-16 max-w-[1280px] items-center gap-3 px-4 sm:px-6 lg:h-[84px] lg:px-8">
+      <div className="mx-auto flex h-16 w-full items-center gap-3 px-4 sm:px-6 lg:h-[72px] lg:px-8">
         <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="دنتوتایم، صفحه اصلی">
-          <Image src="/images/logo.png" alt="دنتوتایم" width={152} height={52} priority className="h-10 w-auto object-contain lg:h-12" />
+          <Image src="/images/logo.png" alt="دنتوتایم" width={142} height={42} priority className="h-10 w-auto object-contain lg:h-12" />
         </Link>
 
         <nav className="mr-6 hidden flex-1 items-center justify-center gap-6 lg:flex" aria-label="منوی اصلی">
@@ -46,14 +46,14 @@ export default function Navbar() {
             type="button"
             variant="outline"
             onClick={openLogin}
-            className="hidden h-11 rounded-full border-[#2993A3] bg-white px-5 font-bold text-[#2993A3] hover:bg-[#EFFAFB] sm:inline-flex"
+            className="hidden h-11 rounded-sm cursor-pointer border-[#2993A3] bg-white px-5 font-bold text-[#2993A3] hover:bg-[#EFFAFB] sm:inline-flex"
           >
             {isAuthenticated ? "حساب کاربری" : "ورود و ثبت نام"}
           </Button>
           <Button
             type="button"
             onClick={() => openBooking()}
-            className="h-10 rounded-full bg-[linear-gradient(90deg,#2993A3_0%,#75C1C7_100%)] px-3 font-bold text-white shadow-[0_8px_24px_rgba(41,147,163,0.22)] hover:brightness-95 sm:h-11 sm:px-5"
+            className="h-10 rounded-sm cursor-pointer bg-[linear-gradient(90deg,#2993A3_0%,#75C1C7_100%)] px-3 font-bold text-white shadow-[0_8px_24px_rgba(41,147,163,0.22)] hover:brightness-95 sm:h-11 sm:px-5"
           >
             <CalendarDays data-icon="inline-start" aria-hidden="true" />
             <span className="hidden sm:inline">رزرو نوبت</span>
@@ -82,7 +82,7 @@ export default function Navbar() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
-                className="flex min-h-11 items-center rounded-xl px-3 text-sm font-bold text-[#444] hover:bg-[#EFFAFB] hover:text-[#2993A3]"
+                className="flex min-h-11 items-center rounded-sm px-3 text-sm font-bold text-[#444] hover:bg-[#EFFAFB] hover:text-[#2993A3]"
               >
                 {item.label}
               </Link>
@@ -93,7 +93,7 @@ export default function Navbar() {
                 setMobileOpen(false);
                 openLogin();
               }}
-              className="col-span-2 min-h-11 rounded-xl border border-[#2993A3] text-sm font-bold text-[#2993A3] sm:hidden"
+              className="col-span-2 min-h-11 rounded-sm border border-[#2993A3] text-sm font-bold text-[#2993A3] sm:hidden"
             >
               ورود و ثبت نام
             </button>
