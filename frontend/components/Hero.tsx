@@ -12,7 +12,7 @@ export default function Hero() {
       <div className="mx-auto grid min-h-[520px] max-w-[1400px] items-stretch lg:grid-cols-[0.92fr_1.08fr]">
         <div className="order-2 flex items-center px-5 py-12 sm:px-10 lg:order-1 lg:px-14 lg:py-16 xl:px-20">
           <div className="max-w-[590px]">
-            <h1 className="text-[34px] font-black leading-[1.5] tracking-[-0.02em] text-[#111] sm:text-[44px] lg:text-[58px] lg:leading-[1.35]">
+            <h1 className="text-[34px] font-black leading-[1.5] tracking-[-0.02em] text-[#111] sm:text-[44px] lg:text-[50px] lg:leading-[1.35]">
               لبخند سالم، با انتخابی مطمئن شروع می‌شود
             </h1>
             <p className="mt-5 max-w-[560px] text-[15px] leading-8 text-[#555] sm:text-[17px]">
@@ -24,13 +24,13 @@ export default function Hero() {
               </BookingButton>
               <Link
                 href="#services"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-5 text-sm font-bold text-[#2993A3] transition hover:bg-white"
+                className="inline-flex min-h-12 items-center justify-center gap-2 border-1 border-[#2993A3] rounded-sm px-5 text-sm font-bold text-[#2993A3] transition hover:bg-white"
               >
                 مشاهده خدمات
                 <ArrowLeft className="size-4" aria-hidden="true" />
               </Link>
             </div>
-            <p className="mt-5 inline-flex items-center gap-2 text-sm text-[#66787B]">
+            <p className="mt-5 inline-flex items-center justify-center gap-2 text-sm text-[#66787B]">
               <ShieldCheck className="size-5 text-[#2993A3]" aria-hidden="true" />
               اطلاعات شما محرمانه است و نوبت بدون پرداخت پنهان ثبت می‌شود.
             </p>

@@ -278,7 +278,7 @@ export function BookingButton({
     <Button
       type="button"
       onClick={() => openBooking(serviceSlug)}
-      className={cn("h-11 rounded-full px-6", className)}
+      className={cn("h-11 rounded-sm cursor-pointer px-6", className)}
     >
       <CalendarDays data-icon="inline-start" aria-hidden="true" />
       {children}
