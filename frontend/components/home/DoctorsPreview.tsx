@@ -37,18 +37,18 @@ export default function DoctorsPreview() {
   return (
     <>
       <section className="pb-16 sm:pb-20 lg:pb-28" dir="rtl" aria-labelledby="doctors-title">
-        <div className="mx-auto max-w-[1180px] px-4 sm:px-6">
-          <div className="mb-8 flex items-end justify-between gap-4">
+        <div className="mx-auto w-full px-4 sm:px-6">
+          <div className="mb-8 flex items-end justify-between gap-4 px-2 md:px-8">
             <div>
               <h2 id="doctors-title" className="text-[28px] font-black text-[#111] sm:text-[40px]">دندان‌پزشکان برتر</h2>
               <p className="mt-3 max-w-[620px] text-[15px] leading-7 text-[#666] sm:text-base">
                 امتیاز هر پزشک از میانگین تمام نظرهای ثبت‌شده محاسبه می‌شود.
               </p>
-              <Link href="/doctors" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-[#2993A3] hover:underline">
-                <ArrowRight className="size-4" aria-hidden="true" />
-                مشاهده همه
-              </Link>
             </div>
+            <Link href="/doctors" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-[#2993A3] hover:underline">
+              مشاهده همه
+              <ArrowLeft className="size-4" aria-hidden="true" />
+            </Link>
           </div>
 
           <div className="relative">
@@ -58,7 +58,7 @@ export default function DoctorsPreview() {
             <div
               ref={viewportRef}
               onScroll={keepInfinite}
-              className="dento-scrollbar-hidden flex snap-x snap-mandatory gap-4 overflow-x-auto px-2 py-3"
+              className="dento-scrollbar-hidden flex snap-x snap-mandatory gap-4 overflow-x-auto px-2 pb-12 pt-3"
               style={{ direction: "ltr" }}
             >
               {loopedDentists.map((dentist, index) => (
@@ -66,7 +66,7 @@ export default function DoctorsPreview() {
                   key={`${dentist.id}-${index}`}
                   href={`/doctors/${dentist.id}`}
                   dir="rtl"
-                  className="group w-[76vw] max-w-[270px] shrink-0 snap-start overflow-hidden rounded-[22px] border border-[#D4E8EB] bg-white p-3 shadow-[0_12px_36px_rgba(50,139,154,0.08)] transition duration-300 hover:-translate-y-1 hover:border-[#75C1C7] hover:shadow-[0_18px_42px_rgba(50,139,154,0.14)] focus-visible:outline-3 focus-visible:outline-[#75C1C7]/50"
+                  className="group w-[76vw] max-w-[270px] shrink-0 snap-start overflow-hidden rounded-[22px] border border-[#D4E8EB] bg-white p-3 transition duration-300 hover:-translate-y-1 hover:border-[#75C1C7] hover:shadow-[0_18px_42px_rgba(50,139,154,0.14)] focus-visible:outline-3 focus-visible:outline-[#75C1C7]/50"
                 >
                   <Image src={dentist.image} alt={`دکتر ${dentist.firstName} ${dentist.lastName}`} width={480} height={360} sizes="270px" className="aspect-[4/3] w-full rounded-[16px] bg-[#EFF9FB] object-cover object-top" />
                   <div className="px-2 pb-2 pt-4">
