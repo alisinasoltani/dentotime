@@ -65,7 +65,9 @@ export function AllDoctorsDirectory({
           </div>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {results.map((dentist) => (
+            {results.map((dentist) => {
+              const hasRatings = dentist.vote_count > 0;
+              return (
               <article key={dentist.id} className="flex flex-col overflow-hidden rounded-sm border border-[#D5E8EB] bg-white p-3 shadow-[0_12px_34px_rgba(50,139,154,0.07)] transition hover:-translate-y-1 hover:border-[#75C1C7] hover:shadow-[0_18px_42px_rgba(50,139,154,0.13)]">
                 <Link href={`/doctors/${dentist.slug || dentist.id}`} className="rounded-sm focus-visible:outline-3 focus-visible:outline-[#75C1C7]/45">
                   <Image src={dentist.profile_picture || "/images/logo.png"} alt={`دکتر ${dentist.first_name} ${dentist.last_name}`} width={480} height={360} sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw" className="aspect-[4/3] w-full rounded-sm bg-[#EFF9FB] object-cover object-top" />
@@ -73,16 +75,30 @@ export function AllDoctorsDirectory({
                     <h2 className="text-lg font-black text-[#222]">دکتر {dentist.first_name} {dentist.last_name}</h2>
                     <p className="mt-1 text-sm text-[#555]">{dentist.specialty}</p>
                     <div className="mt-3 flex items-center gap-1">
-                      {[1, 2, 3, 4, 5].map((star) => <Star key={star} className="size-3.5 fill-[#F7B731] text-[#F7B731]" />)}
-                      <span className="mr-1 text-[11px] font-bold text-[#555]">{dentist.average_rating.toFixed(1)}</span>
-                      <span className="text-[11px] text-[#888]">({dentist.vote_count} نظر)</span>
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={hasRatings && star <= Math.round(dentist.average_rating)
+                            ? "size-3.5 fill-[#F7B731] text-[#F7B731]"
+                            : "size-3.5 text-[#D5DEE0]"}
+                        />
+                      ))}
+                      {hasRatings ? (
+                        <>
+                          <span className="mr-1 text-[11px] font-bold text-[#555]">{dentist.average_rating.toFixed(1)}</span>
+                          <span className="text-[11px] text-[#888]">({dentist.vote_count} نظر)</span>
+                        </>
+                      ) : (
+                        <span className="mr-1 text-[11px] font-bold text-[#777]">بدون امتیاز</span>
+                      )}
                     </div>
                     <p className="mt-3 flex items-start gap-1.5 text-xs leading-6 text-[#777]"><MapPin className="mt-1 size-3.5 shrink-0 text-[#2993A3]" />{dentist.address}</p>
                   </div>
                 </Link>
                 <BookingButton serviceSlug={dentist.services[0]?.slug} className="mt-5 w-full">رزرو نوبت</BookingButton>
               </article>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>

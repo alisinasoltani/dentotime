@@ -34,4 +34,33 @@ describe("DoctorCard", () => {
     expect(container.textContent).toContain("4.5 از ۵ (8 رأی)");
     expect(container.textContent).not.toContain("+98");
   });
+
+  it("does not present a zero-review doctor as rated", () => {
+    const { container } = render(
+      <DoctorCard
+        doctor={{
+          id: "43",
+          slug: "new-doctor",
+          first_name: "پزشک",
+          last_name: "جدید",
+          display_name: "پزشک جدید",
+          clinic_name: "مطب",
+          profile_picture: null,
+          specialty: "دندان‌پزشک عمومی",
+          bio: "",
+          experience: "",
+          address: "",
+          map_url: "",
+          services: [],
+          insurances: [],
+          likes_count: 0,
+          average_rating: 0,
+          vote_count: 0,
+        }}
+      />,
+    );
+
+    expect(container.textContent).toContain("بدون امتیاز");
+    expect(container.textContent).not.toContain("0.0 از ۵");
+  });
 });

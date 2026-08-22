@@ -6,6 +6,7 @@ import type { PublicDoctor } from "@/lib/types";
 
 
 export function DoctorCard({ doctor }: { doctor: PublicDoctor }) {
+  const hasRatings = doctor.vote_count > 0;
   return (
     <Link
       href={`/doctors/${doctor.id}`}
@@ -30,7 +31,9 @@ export function DoctorCard({ doctor }: { doctor: PublicDoctor }) {
         </div>
         <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-yellow-600">
           <Star className="h-3.5 w-3.5" fill="currentColor" />
-          {doctor.average_rating.toFixed(1)} از ۵ ({doctor.vote_count} رأی)
+          {hasRatings
+            ? `${doctor.average_rating.toFixed(1)} از ۵ (${doctor.vote_count} رأی)`
+            : "بدون امتیاز"}
         </div>
       </div>
       <ChevronLeft className="h-5 w-5 text-gray-400" />

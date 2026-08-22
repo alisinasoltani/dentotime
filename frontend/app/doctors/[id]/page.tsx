@@ -32,6 +32,7 @@ export default async function DoctorProfilePage({
 
   const dentistServices = dentist.services;
   const doctorIdentifier = dentist.slug || String(dentist.id);
+  const hasRatings = dentist.vote_count > 0;
   const averageRating = dentist.average_rating.toFixed(1);
 
   return (
@@ -48,12 +49,16 @@ export default async function DoctorProfilePage({
           <div className="flex flex-col justify-center px-1 py-6 sm:px-3 lg:py-4">
             <p className="text-sm font-bold text-[#2993A3]">{dentist.specialty}</p>
             <h1 className="mt-2 text-[32px] font-black text-[#111] sm:text-[46px]">دکتر {dentist.first_name} {dentist.last_name}</h1>
-            <div className="mt-4 flex flex-wrap items-center gap-2" aria-label={`میانگین امتیاز ${averageRating} از ۵ از مجموع ${dentist.vote_count} امتیاز`}>
+            <div className="mt-4 flex flex-wrap items-center gap-2" aria-label={hasRatings ? `میانگین امتیاز ${averageRating} از ۵ از مجموع ${dentist.vote_count} امتیاز` : "هنوز امتیازی ثبت نشده است"}>
               <span className="flex items-center gap-0.5">
-                {[1, 2, 3, 4, 5].map((star) => <Star key={star} className="size-5 fill-[#F7B731] text-[#F7B731]" aria-hidden="true" />)}
+                {[1, 2, 3, 4, 5].map((star) => <Star key={star} className={hasRatings && star <= Math.round(dentist.average_rating) ? "size-5 fill-[#F7B731] text-[#F7B731]" : "size-5 text-[#D5DEE0]"} aria-hidden="true" />)}
               </span>
-              <strong className="text-sm text-[#444]">{averageRating}</strong>
-              <span className="text-sm text-[#777]">از {dentist.vote_count} امتیاز</span>
+              {hasRatings ? (
+                <>
+                  <strong className="text-sm text-[#444]">{averageRating}</strong>
+                  <span className="text-sm text-[#777]">از {dentist.vote_count} امتیاز</span>
+                </>
+              ) : <strong className="text-sm text-[#777]">بدون امتیاز</strong>}
             </div>
             <p className="mt-6 text-[15px] leading-8 text-[#555] sm:text-base">{dentist.bio}</p>
 

@@ -462,11 +462,14 @@ class PublicDoctorListSerializer(serializers.ModelSerializer):
     """سریالایزر عمومی برای نمایش لیست دکترها در سایت"""
     likes_count = serializers.IntegerField(read_only=True)
     vote_count = serializers.IntegerField(read_only=True)
-    average_rating = serializers.FloatField(read_only=True)
+    average_rating = serializers.SerializerMethodField()
     display_name = serializers.CharField(read_only=True)
     slug = serializers.CharField(source="username", read_only=True)
     services = DentalServiceSerializer(many=True, read_only=True)
     insurances = InsuranceProviderSerializer(many=True, read_only=True)
+
+    def get_average_rating(self, obj):
+        return round(float(getattr(obj, "average_rating", 0) or 0), 1)
 
     class Meta:
         model = Doctor
@@ -480,12 +483,15 @@ class PublicDoctorDetailSerializer(serializers.ModelSerializer):
     """سریالایزر عمومی برای نمایش اطلاعات کامل یک دکتر + نظرات"""
     likes_count = serializers.IntegerField(read_only=True)
     vote_count = serializers.IntegerField(read_only=True)
-    average_rating = serializers.FloatField(read_only=True)
+    average_rating = serializers.SerializerMethodField()
     display_name = serializers.CharField(read_only=True)
     is_liked = serializers.SerializerMethodField()
     slug = serializers.CharField(source="username", read_only=True)
     services = DentalServiceSerializer(many=True, read_only=True)
     insurances = InsuranceProviderSerializer(many=True, read_only=True)
+
+    def get_average_rating(self, obj):
+        return round(float(getattr(obj, "average_rating", 0) or 0), 1)
 
     class Meta:
         model = Doctor

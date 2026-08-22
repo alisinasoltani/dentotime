@@ -54,7 +54,9 @@ const contentSecurityPolicy = [
 
 const securityHeaders = [
   { key: "Content-Security-Policy", value: contentSecurityPolicy },
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  ...(!allowInsecureHttp
+    ? [{ key: "Cross-Origin-Opener-Policy", value: "same-origin" }]
+    : []),
   { key: "Cross-Origin-Resource-Policy", value: "same-site" },
   {
     key: "Permissions-Policy",
@@ -75,6 +77,11 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Keep source builds reliable on small deployment hosts (including the
+  // current 1-vCPU server) instead of spawning one worker per host CPU.
+  experimental: {
+    cpus: 1,
+  },
   // Django's APPEND_SLASH redirects API paths to a trailing slash. Let the
   // rewrite reach Django instead of having Next normalize the slash first,
   // which otherwise creates a redirect loop for browser Axios requests.

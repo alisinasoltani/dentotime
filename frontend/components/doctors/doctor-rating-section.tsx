@@ -360,8 +360,10 @@ function RatingSummaryCard({
       ) : (
         <div className="mt-6 rounded-sm bg-muted/70 p-4 sm:p-6">
           <div className="flex flex-wrap items-end justify-center gap-x-4 gap-y-1 text-center">
-            <strong className="text-5xl font-black text-foreground">
-              {toPersianDigits(summary.average_rating.toFixed(1))}
+            <strong className={summary.vote_count > 0 ? "text-5xl font-black text-foreground" : "text-xl font-black text-foreground"}>
+              {summary.vote_count > 0
+                ? toPersianDigits(summary.average_rating.toFixed(1))
+                : "بدون امتیاز"}
             </strong>
             <div className="pb-1 text-right">
               <Stars value={summary.average_rating} />

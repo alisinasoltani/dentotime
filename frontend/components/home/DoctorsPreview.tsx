@@ -67,7 +67,10 @@ export default function DoctorsPreview({
               className="dento-scrollbar-hidden flex snap-x snap-mandatory gap-4 overflow-x-auto px-2 pb-12 pt-3"
               style={{ direction: "ltr" }}
             >
-              {loopedDentists.map((dentist, index) => (
+              {loopedDentists.map((dentist, index) => {
+                const hasRatings = dentist.vote_count > 0;
+                const roundedRating = dentist.average_rating.toFixed(1);
+                return (
                 <Link
                   key={`${dentist.id}-${index}`}
                   href={`/doctors/${dentist.slug || dentist.id}`}
@@ -78,16 +81,34 @@ export default function DoctorsPreview({
                   <div className="px-2 pb-2 pt-4">
                     <h3 className="text-base font-extrabold text-[#222]">دکتر {dentist.first_name} {dentist.last_name}</h3>
                     <p className="mt-1 truncate text-xs text-[#666]">{dentist.specialty}</p>
-                    <div className="mt-4 flex items-center gap-1" aria-label={`امتیاز ${dentist.average_rating} از ۵ از مجموع ${dentist.vote_count} نظر`}>
+                    <div
+                      className="mt-4 flex items-center gap-1"
+                      aria-label={hasRatings
+                        ? `امتیاز ${roundedRating} از ۵ از مجموع ${dentist.vote_count} نظر`
+                        : "هنوز امتیازی ثبت نشده است"}
+                    >
                       {[1, 2, 3, 4, 5].map((star) => (
-                        <Star key={star} className="size-3.5 fill-[#F7B731] text-[#F7B731]" aria-hidden="true" />
+                        <Star
+                          key={star}
+                          className={hasRatings && star <= Math.round(dentist.average_rating)
+                            ? "size-3.5 fill-[#F7B731] text-[#F7B731]"
+                            : "size-3.5 text-[#D5DEE0]"}
+                          aria-hidden="true"
+                        />
                       ))}
-                      <span className="mr-1 text-[11px] font-bold text-[#555]">{dentist.average_rating}</span>
-                      <span className="text-[11px] text-[#888]">({dentist.vote_count} نظر)</span>
+                      {hasRatings ? (
+                        <>
+                          <span className="mr-1 text-[11px] font-bold text-[#555]">{roundedRating}</span>
+                          <span className="text-[11px] text-[#888]">({dentist.vote_count} نظر)</span>
+                        </>
+                      ) : (
+                        <span className="mr-1 text-[11px] font-bold text-[#777]">بدون امتیاز</span>
+                      )}
                     </div>
                   </div>
                 </Link>
-              ))}
+                );
+              })}
             </div>
             <button type="button" onClick={() => move("left")} className="absolute left-1 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-[#9BD8E4] bg-white text-[#2993A3] shadow-[0_8px_24px_rgba(54,150,165,0.18)]" aria-label="پزشک قبلی">
               <ArrowLeft className="size-5" />

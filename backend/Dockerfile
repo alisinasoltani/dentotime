@@ -27,4 +27,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/api/v1/health/', headers={'X-Forwarded-Proto':'https'}); urllib.request.urlopen(r, timeout=3)"
 
-CMD ["sh", "-c", "test -n \"$UVICORN_FORWARDED_ALLOW_IPS\" || { echo 'UVICORN_FORWARDED_ALLOW_IPS is required' >&2; exit 1; }; exec python -m uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --workers 4 --proxy-headers --forwarded-allow-ips \"$UVICORN_FORWARDED_ALLOW_IPS\""]
+CMD ["sh", "-c", "test -n \"$UVICORN_FORWARDED_ALLOW_IPS\" || { echo 'UVICORN_FORWARDED_ALLOW_IPS is required' >&2; exit 1; }; workers=\"${UVICORN_WORKERS:-1}\"; case \"$workers\" in ''|*[!0-9]*) echo 'UVICORN_WORKERS must be a positive integer' >&2; exit 1;; esac; test \"$workers\" -ge 1 || { echo 'UVICORN_WORKERS must be a positive integer' >&2; exit 1; }; exec python -m uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --workers \"$workers\" --proxy-headers --forwarded-allow-ips \"$UVICORN_FORWARDED_ALLOW_IPS\""]

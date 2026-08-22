@@ -810,6 +810,9 @@ class RatingSummaryView(APIView):
             ),
             vote_count=Count("pk"),
         )
+        review_summary["average_rating"] = round(
+            float(review_summary["average_rating"] or 0), 1
+        )
         answer_stats = {
             row["parameter_id"]: row
             for row in DoctorReviewAnswer.objects.filter(

@@ -288,6 +288,26 @@ def test_rating_summary_keeps_parameters_recommendation_and_wait_time_separate(
 
 
 @pytest.mark.django_db
+def test_public_doctor_averages_are_rounded_to_one_decimal(doctor_user):
+    approve(doctor_user)
+    for index, rating in enumerate((5, 4, 5), start=201):
+        DoctorReview.objects.create(
+            doctor=doctor_user,
+            user=patient(index),
+            rating=rating,
+        )
+
+    detail = APIClient().get(f"/api/v1/doctors/{doctor_user.pk}/")
+    summary = APIClient().get(summary_url(doctor_user))
+
+    assert detail.status_code == 200
+    assert detail.data["average_rating"] == 4.7
+    assert detail.data["vote_count"] == 3
+    assert summary.status_code == 200
+    assert summary.data["average_rating"] == 4.7
+
+
+@pytest.mark.django_db
 def test_inactive_parameter_is_not_required_and_is_removed_on_review_update(
     authed_client,
     normal_user,
