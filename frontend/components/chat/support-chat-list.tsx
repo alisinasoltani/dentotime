@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, Headset, Plus } from "lucide-react";
+import { ArrowRight, Headset, Plus, Stethoscope, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import NewConversationDialog from "@/components/chat/new-conversation-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { getOrCreateThread, getThreads } from "@/lib/chat";
@@ -16,12 +17,15 @@ export default function SupportChatList({
   onSelectThread,
   activeThreadId,
   onBack,
+  allowDirectConversations = false,
 }: {
   onSelectThread: (thread: ChatThread) => void;
   activeThreadId: string | null;
   onBack?: () => void;
+  allowDirectConversations?: boolean;
 }) {
   const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [isNewConversationOpen, setIsNewConversationOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -46,6 +50,10 @@ export default function SupportChatList({
   }, [refresh]);
 
   const createConversation = async () => {
+    if (allowDirectConversations) {
+      setIsNewConversationOpen(true);
+      return;
+    }
     try {
       const thread = await getOrCreateThread();
       setThreads((current) =>
@@ -57,6 +65,14 @@ export default function SupportChatList({
     } catch {
       toast.error("ایجاد گفتگوی جدید ناموفق بود");
     }
+  };
+
+  const addAndSelectThread = (thread: ChatThread) => {
+    setThreads((current) => {
+      const withoutCurrent = current.filter((item) => item.id !== thread.id);
+      return [thread, ...withoutCurrent];
+    });
+    onSelectThread(thread);
   };
 
   return (
@@ -87,7 +103,12 @@ export default function SupportChatList({
         {threads.length === 0 ? (
           <p className="p-8 text-center text-sm text-gray-400">گفتگویی یافت نشد</p>
         ) : (
-          threads.map((thread) => (
+          threads.map((thread) => {
+            const isDirect = thread.thread_type === "DIRECT";
+            const name = isDirect
+              ? `${thread.participant?.first_name || ""} ${thread.participant?.last_name || ""}`.trim()
+              : "پشتیبانی دنتو تایم";
+            return (
             <div key={thread.id}>
               <button
                 type="button"
@@ -104,23 +125,39 @@ export default function SupportChatList({
                 )}
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate text-sm font-semibold text-gray-800">
-                    پشتیبانی دنتو تایم
+                    {name}
                   </h3>
                   <p className="truncate text-xs text-gray-500">
                     {thread.last_message || "بدون پیام"}
                   </p>
                 </div>
                 <Avatar className="h-12 w-12 bg-[#E9F5F9]">
+                  <AvatarImage src={thread.participant?.profile_picture || undefined} alt={name} />
                   <AvatarFallback className="bg-[#E9F5F9] text-[#2993A3]">
-                    <Headset className="h-5 w-5" />
+                    {isDirect ? (
+                      thread.participant?.role === "DOCTOR" ? (
+                        <Stethoscope className="h-5 w-5" />
+                      ) : (
+                        <UserRound className="h-5 w-5" />
+                      )
+                    ) : (
+                      <Headset className="h-5 w-5" />
+                    )}
                   </AvatarFallback>
                 </Avatar>
               </button>
               <Separator />
             </div>
-          ))
+          )})
         )}
       </ScrollArea>
+      {allowDirectConversations ? (
+        <NewConversationDialog
+          open={isNewConversationOpen}
+          onOpenChange={setIsNewConversationOpen}
+          onThreadCreated={addAndSelectThread}
+        />
+      ) : null}
     </div>
   );
 }

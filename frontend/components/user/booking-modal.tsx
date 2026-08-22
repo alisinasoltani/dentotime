@@ -18,9 +18,11 @@ import api from "@/lib/api";
 import { restoreSession } from "@/lib/auth";
 import { showBookingSuccess } from "@/components/booking-success-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import type { DentalService, PaginatedResponse, PublicCatalog, PublicDoctor } from "@/lib/types";
 
 const bookingSchema = z.object({
     service: z.string().min(1, "لطفا یک سرویس را انتخاب کنید"),
+    doctorId: z.string().min(1, "لطفا پزشک را انتخاب کنید"),
     fullName: z.string().min(3, "نام کامل باید حداقل ۳ حرف باشد"),
     phone: z.string().regex(/^09\d{9}$/, "شماره موبایل معتبر نیست (مثال: 09123456789)"),
     date: z.string().min(1, "لطفا یک روز را از تقویم انتخاب کنید"),
@@ -30,20 +32,14 @@ const bookingSchema = z.object({
 
 type BookingFormValues = z.infer<typeof bookingSchema>;
 
-const SERVICES = [
-    "ایمپلنت دندان",
-    "طراحی لبخند دیجیتال",
-    "پروتزهای ثابت و متحرک",
-    "ترمیم و زیبایی",
-    "بلیچینگ",
-];
-
 const WEEK_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'];
 
 interface BookingModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: () => void;
+    initialServiceSlug?: string;
+    initialInsurance?: string;
 }
 
 interface AppointmentSlot {
@@ -64,7 +60,13 @@ interface CaptchaChallenge {
     expires_in: number;
 }
 
-export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModalProps) {
+export default function BookingModal({
+    isOpen,
+    onClose,
+    onSuccess,
+    initialServiceSlug,
+    initialInsurance,
+}: BookingModalProps) {
     const today = startOfDay(new Date());
     const [currentMonth, setCurrentMonth] = useState(today);
     const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(null);
@@ -78,13 +80,17 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
     const [authResolved, setAuthResolved] = useState(false);
     const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null);
     const [isLoadingCaptcha, setIsLoadingCaptcha] = useState(false);
+    const [doctors, setDoctors] = useState<PublicDoctor[]>([]);
+    const [services, setServices] = useState<DentalService[]>([]);
 
     const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<BookingFormValues>({
         resolver: zodResolver(bookingSchema),
-        defaultValues: { service: SERVICES[0] }
+        defaultValues: { service: initialServiceSlug ?? "", doctorId: "" }
     });
 
     const watchDate = watch("date");
+    const watchService = watch("service");
+    const watchDoctor = watch("doctorId");
 
     const loadCaptcha = useCallback(async () => {
         setIsLoadingCaptcha(true);
@@ -109,7 +115,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                     const hasSession = await restoreSession();
                     setIsAuthenticated(hasSession);
                     if (!hasSession) {
-                        reset({ fullName: "", phone: "", service: SERVICES[0], date: "", time: "", captchaAnswer: "" });
+                        reset({ fullName: "", phone: "", service: initialServiceSlug ?? "", doctorId: "", date: "", time: "", captchaAnswer: "" });
                         await loadCaptcha();
                         return;
                     }
@@ -127,7 +133,8 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                     reset({
                         fullName: `${user.first_name || ""} ${user.last_name || ""}`.trim(),
                         phone: rawPhone,
-                        service: SERVICES[0],
+                        service: initialServiceSlug ?? "",
+                        doctorId: "",
                         date: "",
                         time: "",
                         captchaAnswer: "",
@@ -142,11 +149,42 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
             };
             void fetchUserData();
         }
-    }, [isOpen, loadCaptcha, reset]);
+    }, [initialServiceSlug, isOpen, loadCaptcha, reset]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const loadBookingData = async () => {
+            try {
+                const [doctorResponse, catalogResponse] = await Promise.all([
+                    api.get<PaginatedResponse<PublicDoctor> | PublicDoctor[]>("/doctors/list/?page_size=100"),
+                    api.get<PublicCatalog>("/doctors/catalog/"),
+                ]);
+                setDoctors(Array.isArray(doctorResponse.data) ? doctorResponse.data : doctorResponse.data.results);
+                setServices(catalogResponse.data.services);
+            } catch {
+                setDoctors([]);
+                setServices([]);
+                toast.error("دریافت فهرست پزشکان انجام نشد.");
+            }
+        };
+        void loadBookingData();
+    }, [isOpen]);
+
+    const eligibleDoctors = useMemo(() => doctors.filter((doctor) => {
+        const hasService = !watchService || doctor.services.some((service) => service.slug === watchService);
+        const hasInsurance = !initialInsurance || initialInsurance === "آزاد" || doctor.insurances.some((item) => item.name === initialInsurance);
+        return hasService && hasInsurance;
+    }), [doctors, initialInsurance, watchService]);
 
     // دریافت اسلات‌های ماه جاری
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen || !watchDoctor) {
+            const timer = window.setTimeout(() => {
+                setAvailableSlots([]);
+                setSelectedSlotId(null);
+            }, 0);
+            return () => window.clearTimeout(timer);
+        }
 
         const fetchSlots = async () => {
             setIsLoadingSlots(true);
@@ -155,7 +193,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                 const end = gFormat(endOfMonth(currentMonth), 'yyyy-MM-dd');
 
                 let allSlots: AppointmentSlot[] = [];
-                let url: string | null = `/appointments/slots/?start_date=${start}&end_date=${end}&_t=${Date.now()}`;
+                let url: string | null = `/appointments/slots/?start_date=${start}&end_date=${end}&doctor_id=${encodeURIComponent(watchDoctor)}&_t=${Date.now()}`;
 
                 while (url) {
                     const res: AxiosResponse<AppointmentSlot[] | PaginatedSlots> = await api.get<AppointmentSlot[] | PaginatedSlots>(url);
@@ -185,8 +223,8 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                 setIsLoadingSlots(false);
             }
         };
-        fetchSlots();
-    }, [currentMonth, isOpen]);
+        void fetchSlots();
+    }, [currentMonth, isOpen, watchDoctor]);
 
     const slotsByDate = useMemo(() => {
         const map: Record<string, AppointmentSlot[]> = {};
@@ -222,6 +260,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                 '/appointments/',
                 {
                     slot_id: selectedSlotId,
+                    doctor_id: Number(data.doctorId),
                     reason: data.service,
                     ...(!isAuthenticated && captcha ? {
                         phone_number: data.phone.startsWith("0") ? `+98${data.phone.slice(1)}` : data.phone,
@@ -236,7 +275,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
 
             showBookingSuccess(isAuthenticated);
 
-            reset({ fullName: data.fullName, phone: data.phone, service: SERVICES[0], date: "", time: "", captchaAnswer: "" });
+            reset({ fullName: data.fullName, phone: data.phone, service: initialServiceSlug ?? "", doctorId: data.doctorId, date: "", time: "", captchaAnswer: "" });
             setSelectedDateObj(null);
             setSelectedSlotId(null);
             idempotencyKeyRef.current = null;
@@ -374,11 +413,32 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                                             dir="rtl"
                                             className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-right outline-none focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3] transition-all appearance-none"
                                         >
-                                            {SERVICES.map(srv => <option key={srv} value={srv}>{srv}</option>)}
+                                            <option value="">خدمت مورد نظر را انتخاب کنید</option>
+                                            {services.map((service) => <option key={service.id} value={service.slug}>{service.title}</option>)}
                                         </select>
                                         <ChevronLeft className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none -rotate-90" />
                                     </div>
                                     {errors.service && <span className="text-xs text-red-500">{errors.service.message}</span>}
+                                </div>
+
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-sm font-bold text-slate-700">پزشک:</label>
+                                    <div className="relative">
+                                        <select
+                                            {...register("doctorId")}
+                                            dir="rtl"
+                                            className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-right outline-none transition-all focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3]"
+                                        >
+                                            <option value="">پزشک مورد نظر را انتخاب کنید</option>
+                                            {eligibleDoctors.map((doctor) => (
+                                                <option key={doctor.id} value={String(doctor.id)}>
+                                                    دکتر {doctor.first_name} {doctor.last_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <ChevronLeft className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 -rotate-90 text-slate-400" />
+                                    </div>
+                                    {errors.doctorId ? <span className="text-xs text-red-500">{errors.doctorId.message}</span> : null}
                                 </div>
 
                                 <div className="flex flex-col gap-2">

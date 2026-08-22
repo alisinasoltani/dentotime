@@ -20,7 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { services } from "@/lib/site-data";
+import type { DentalService } from "@/lib/types";
 
 const iconMap: Record<string, LucideIcon> = {
   messages: MessagesSquare,
@@ -37,10 +37,9 @@ const iconMap: Record<string, LucideIcon> = {
   "circle-dot": CircleDot,
 };
 
-const loopedServices = [...services, ...services, ...services];
-
-export default function Services() {
+export default function Services({ services }: { services: DentalService[] }) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const loopedServices = [...services, ...services, ...services];
 
   useEffect(() => {
     const viewport = viewportRef.current;

@@ -54,6 +54,7 @@ img {
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-rating: var(--rating);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -78,6 +79,7 @@ img {
   --popover-foreground: #111111;
   --primary: #2993a3;
   --primary-foreground: #ffffff;
+  --rating: #f5a524;
   --secondary: #effafb;
   --secondary-foreground: #285b63;
   --muted: #eff9fb;

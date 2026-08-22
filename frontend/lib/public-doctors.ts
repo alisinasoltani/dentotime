@@ -1,12 +1,22 @@
 import api from "./api";
-import type { PublicDoctor, DoctorDetail, PaginatedResponse, Review } from "./types";
+import type {
+  DoctorDetail,
+  DoctorRatingSummary,
+  DoctorReviewSubmission,
+  PaginatedResponse,
+  PublicDoctor,
+  PublicCatalog,
+  RatingParameter,
+  Review,
+  ReviewEligibility,
+} from "./types";
 
 export const getPublicDoctorsPage = async (
   search?: string,
   page = 1,
   signal?: AbortSignal,
 ): Promise<PaginatedResponse<PublicDoctor>> => {
-  const res = await api.get("/doctors/list/", { params: { search, page }, signal });
+  const res = await api.get("/doctors/list/", { params: { search, page, page_size: 100 }, signal });
   if (Array.isArray(res.data)) {
     return { count: res.data.length, next: null, previous: null, results: res.data };
   }
@@ -47,7 +57,31 @@ export const getDoctorReviews = async (
   return res.data;
 };
 
-export const submitDoctorReview = async (id: string | number, payload: { rating: number; comment: string }): Promise<Review> => {
+export const getRatingParameters = async (): Promise<RatingParameter[]> => {
+  const res = await api.get("/doctors/rating-parameters/");
+  return res.data;
+};
+
+export const getPublicCatalog = async (): Promise<PublicCatalog> => {
+  const res = await api.get("/doctors/catalog/");
+  return res.data;
+};
+
+export const getDoctorRatingSummary = async (
+  id: string | number,
+): Promise<DoctorRatingSummary> => {
+  const res = await api.get(`/doctors/${id}/rating-summary/`);
+  return res.data;
+};
+
+export const getDoctorReviewEligibility = async (
+  id: string | number,
+): Promise<ReviewEligibility> => {
+  const res = await api.get(`/doctors/${id}/review-eligibility/`);
+  return res.data;
+};
+
+export const submitDoctorReview = async (id: string | number, payload: DoctorReviewSubmission): Promise<Review> => {
   const res = await api.post(`/doctors/${id}/reviews/`, payload);
   return res.data;
 };

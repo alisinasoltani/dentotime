@@ -16,6 +16,8 @@ import { useState, useEffect } from "react";
 import api from "@/lib/api";
 import Image from "next/image";
 import { clearTokens } from "@/lib/auth";
+import type { User } from "@/lib/types";
+import { toast } from "sonner";
 
 const navItems = [
     { title: "نوبت ها", href: "/user/appointments", icon: UserCheck },
@@ -26,7 +28,7 @@ export default function UserSidebar({ onClose }: { onClose?: () => void }) {
     const pathname = usePathname();
     const router = useRouter();
     const [isLoggingOut, setIsLoggingOut] = useState(false);
-    const [user, setUser] = useState<any>(null);
+    const [user, setUser] = useState<User | null>(null);
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -44,11 +46,13 @@ export default function UserSidebar({ onClose }: { onClose?: () => void }) {
         setIsLoggingOut(true);
         try {
             await api.post("/auth/logout/");
-            clearTokens();
-            router.push("/");
         } catch (error) {
             console.error("Logout failed", error);
+            toast.error("خروج از سرور کامل نشد؛ دوباره وارد حساب شوید.");
         } finally {
+            clearTokens();
+            router.replace("/login");
+            router.refresh();
             setIsLoggingOut(false);
         }
     };
@@ -61,7 +65,7 @@ export default function UserSidebar({ onClose }: { onClose?: () => void }) {
             <div className="flex h-full flex-col bg-white border border-[#5FB4FF] rounded-2xl w-72 p-4">
                 <div className="flex justify-center items-center gap-4">
                     <div className="w-10 h-10 md:h-12 md:w-12 rounded-md flex items-center justify-center text-gray-400 text-sm mb-4">
-                        <Image src={"/images/logo.png"} alt="" width={48} height={48} />
+                        <Image src={"/images/logo.png"} alt="" width={55} height={48} />
                     </div>
                     <div className="flex items-center justify-between mb-4">
                         <h1 className="text-md md:text-lg font-bold text-gray-800">پنل کاربری دنتو تایم</h1>

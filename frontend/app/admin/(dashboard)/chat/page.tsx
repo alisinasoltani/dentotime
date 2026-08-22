@@ -19,9 +19,9 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-4rem)] md:h-[calc(100vh-4rem)] flex bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className="flex h-[calc(100vh-4rem)] min-h-0 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       {/* لیست چت‌ها - در دسکتاپ همیشه دیده می‌شود، در موبایل اگر showChatMobile false باشد */}
-      <div className={`${showChatMobile ? "hidden" : "flex"} md:flex w-full md:w-auto`}>
+      <div className={`${showChatMobile ? "hidden" : "flex"} min-h-0 w-full md:flex md:w-auto`}>
         <ChatList 
           onSelectThread={handleSelectThread} 
           activeThreadId={activeThread?.id || null} 
@@ -30,7 +30,7 @@ export default function ChatPage() {
       </div>
 
       {/* پنجره چت - در دسکتاپ همیشه دیده می‌شود، در موبایل اگر showChatMobile true باشد */}
-      <div className={`${showChatMobile ? "flex" : "hidden"} md:flex flex-1`}>
+      <div className={`${showChatMobile ? "flex" : "hidden"} min-h-0 flex-1 md:flex`}>
         <ChatWindow thread={activeThread} onBack={handleBack} />
       </div>
     </div>

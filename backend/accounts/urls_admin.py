@@ -4,10 +4,13 @@ from .views import (
     AdminUserDeactivateView, AdminUserReactivateView,
     AdminDoctorApproveView, AdminDoctorRejectView,
     AdminDashboardSummaryView, AdminRatingVoterListView,
+    AdminRatingParameterDetailView, AdminRatingParameterListCreateView,
 )
 
 urlpatterns = [
     path("dashboard/summary/", AdminDashboardSummaryView.as_view(), name="admin_dashboard_summary"),
+    path("rating-parameters/", AdminRatingParameterListCreateView.as_view(), name="admin_rating_parameters"),
+    path("rating-parameters/<int:pk>/", AdminRatingParameterDetailView.as_view(), name="admin_rating_parameter_detail"),
     path("users/", AdminUserListView.as_view(), name="admin_user_list"),
     path("doctors/", AdminDoctorListView.as_view(), name="admin_doctor_list"),
     path("users/<int:pk>/deactivate/", AdminUserDeactivateView.as_view(), name="admin_user_deactivate"),

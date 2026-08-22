@@ -13,9 +13,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useBookingExperience } from "@/components/booking/BookingExperience";
-import { insurers, services } from "@/lib/site-data";
+import type { DentalService, InsuranceProvider } from "@/lib/types";
 
-export default function BookingSection() {
+export default function BookingSection({
+  services,
+  insurances,
+}: {
+  services: DentalService[];
+  insurances: InsuranceProvider[];
+}) {
   const [service, setService] = useState("");
   const [insurance, setInsurance] = useState("");
   const { openBooking } = useBookingExperience();
@@ -72,8 +78,8 @@ export default function BookingSection() {
                 </SelectTrigger>
                 <SelectContent position="popper" align="start">
                   <SelectGroup>
-                    {insurers.map((item) => (
-                      <SelectItem key={item} value={item}>{item}</SelectItem>
+                    {insurances.map((item) => (
+                      <SelectItem key={item.id} value={item.name}>{item.name}</SelectItem>
                     ))}
                   </SelectGroup>
                 </SelectContent>

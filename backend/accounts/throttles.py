@@ -5,3 +5,7 @@ class LoginThrottle(ScopedRateThrottle):
 
 class SignupThrottle(ScopedRateThrottle):
     scope = "signup"
+
+
+class RefreshThrottle(ScopedRateThrottle):
+    scope = "refresh"

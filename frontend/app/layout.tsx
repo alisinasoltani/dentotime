@@ -85,7 +85,7 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fa" dir="rtl" className={cn("scroll-smooth", "font-sans", IranSansX.variable)}>
+    <html lang="fa" dir="rtl" data-scroll-behavior="smooth" className={cn("scroll-smooth", "font-sans", IranSansX.variable)}>
       <body className={`${IranSansX.className} antialiased text-[#111] bg-white`}>
         <SecurityProvider>
           <BookingExperienceProvider>

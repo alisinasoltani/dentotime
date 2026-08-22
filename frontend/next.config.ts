@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const isProduction = process.env.NODE_ENV === "production";
 const allowInsecureHttp = process.env.ALLOW_INSECURE_HTTP === "true";
 const backendInternalUrl = (
-  process.env.BACKEND_INTERNAL_URL ?? "http://127.0.0.1:8000"
+  process.env.BACKEND_INTERNAL_URL ?? "https://127.0.0.1:8000"
 ).replace(/\/$/, "");
 
 const backendUrl = new URL(backendInternalUrl);
@@ -14,6 +14,9 @@ if (isProduction && !allowInsecureHttp && backendUrl.protocol !== "https:") {
 const publicApiOrigin = process.env.NEXT_PUBLIC_API_URL
   ? new URL(process.env.NEXT_PUBLIC_API_URL).origin
   : null;
+const publicStorageOrigin = process.env.NEXT_PUBLIC_STORAGE_ORIGIN
+  ? new URL(process.env.NEXT_PUBLIC_STORAGE_ORIGIN).origin
+  : null;
 if (
   isProduction &&
   publicApiOrigin &&
@@ -21,7 +24,17 @@ if (
 ) {
   throw new Error("NEXT_PUBLIC_API_URL must use HTTPS in production.");
 }
-const connectSources = ["'self'", ...(publicApiOrigin ? [publicApiOrigin] : [])];
+if (
+  isProduction && publicStorageOrigin && !allowInsecureHttp &&
+  new URL(publicStorageOrigin).protocol !== "https:"
+) {
+  throw new Error("NEXT_PUBLIC_STORAGE_ORIGIN must use HTTPS in production.");
+}
+const connectSources = [
+  "'self'",
+  ...(publicApiOrigin ? [publicApiOrigin] : []),
+  ...(publicStorageOrigin ? [publicStorageOrigin] : []),
+];
 
 const contentSecurityPolicy = [
   "default-src 'self'",

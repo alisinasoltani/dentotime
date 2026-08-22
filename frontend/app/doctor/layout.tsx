@@ -4,10 +4,10 @@ import { ProtectedRoute } from '@/components/shared/protected-route';
 import { DoctorSidebar } from '@/components/doctor/doctor-sidebar';
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import UserSidebar from "@/components/user/user-sidebar";
-import MobileSidebar from "@/components/user/mobile-sidebar";
+import { MobileSidebar } from "@/components/doctor/mobile-sidebar";
 import { Loader2 } from "lucide-react";
 import { getCurrentUser, restoreSession } from "@/lib/auth";
+import { getRoleHomePath } from "@/lib/role-routing";
 
 export default function DoctorLayout({
   children,
@@ -30,7 +30,7 @@ export default function DoctorLayout({
       }
       const user = await getCurrentUser();
       if (!active) return;
-      if (user.role !== "DOCTOR") return router.replace("/login");
+      if (user.role !== "DOCTOR") return router.replace(getRoleHomePath(user.role));
       setIsAuth(true);
     };
     void authorize();

@@ -41,8 +41,7 @@ function processQueue(error: unknown, token: string | null): void {
 }
 
 function getLoginPath(): string {
-  if (typeof window === 'undefined') return '/login';
-  return window.location.pathname.startsWith('/admin') ? '/admin/login' : '/login';
+  return '/login';
 }
 
 api.interceptors.response.use(

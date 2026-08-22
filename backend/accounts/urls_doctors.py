@@ -1,8 +1,9 @@
-from django.urls import path
+from django.urls import path, re_path
 from .views import (
     DoctorVerificationStatusView, DoctorVerificationSubmitView,
     PublicDoctorListView, PublicDoctorPreviewView, PublicDoctorDetailView,
-    DoctorOwnRatingVoterListView, LikeDoctorView, ReviewListCreateView
+    DoctorOwnRatingVoterListView, LikeDoctorView, PublicCatalogView, RatingParameterListView,
+    RatingSummaryView, ReviewEligibilityView, ReviewListCreateView,
 )
 
 urlpatterns = [
@@ -14,9 +15,17 @@ urlpatterns = [
     # مسیرهای عمومی سایت برای دیدن دکترها
     path("list/", PublicDoctorListView.as_view(), name="public_doctor_list"),
     path("preview/", PublicDoctorPreviewView.as_view(), name="public_doctor_preview"),
-    path("<int:pk>/", PublicDoctorDetailView.as_view(), name="public_doctor_detail"),
+    path("catalog/", PublicCatalogView.as_view(), name="public_catalog"),
+    path("rating-parameters/", RatingParameterListView.as_view(), name="rating_parameters"),
+    path("<str:identifier>/rating-summary/", RatingSummaryView.as_view(), name="doctor_rating_summary"),
+    path("<str:identifier>/review-eligibility/", ReviewEligibilityView.as_view(), name="doctor_review_eligibility"),
+    re_path(
+        r"^(?P<identifier>(?!public/$)[^/]+)/$",
+        PublicDoctorDetailView.as_view(),
+        name="public_doctor_detail",
+    ),
     
     # مسیرهای تعاملی (نیازمند لاگین کاربر عادی)
-    path("<int:pk>/like/", LikeDoctorView.as_view(), name="like_doctor"),
-    path("<int:pk>/reviews/", ReviewListCreateView.as_view(), name="doctor_reviews"),
+    path("<str:identifier>/like/", LikeDoctorView.as_view(), name="like_doctor"),
+    path("<str:identifier>/reviews/", ReviewListCreateView.as_view(), name="doctor_reviews"),
 ]

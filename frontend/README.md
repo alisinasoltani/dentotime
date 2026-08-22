@@ -2,19 +2,23 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+The frontend always reads dynamic data from the Django API. Start PostgreSQL,
+Redis, MinIO, migrations, and the backend first from `../backend`:
+
+```powershell
+docker compose --env-file .env.server -f docker-compose.http.yml up -d --build postgres redis minio minio-init backend-migrate backend
+```
+
+Then run Next.js:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+No frontend-only data source or mock authentication mode is used by the runtime.
+Sign in and sign up through `/login` and `/signup`.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

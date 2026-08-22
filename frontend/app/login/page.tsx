@@ -1,13 +1,39 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, ChevronLeft, CheckCircle2, ChevronRight } from 'lucide-react';
 import Image from 'next/image';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import api from '@/lib/api';
-import { getCurrentUser, restoreSession, setAccessToken } from '@/lib/auth';
+import { getCurrentUser, notifyAuthSessionChanged, restoreSession, setAccessToken } from '@/lib/auth';
+import { getRoleHomePath } from '@/lib/role-routing';
+import type { AuthResponse } from '@/lib/types';
+
+const demoAccounts = [
+  {
+    label: 'کاربر مجاز به ثبت نظر',
+    description: 'یک مراجعه تأییدشده به دکتر آرمان حسینی',
+    phone: '09121111101',
+  },
+  {
+    label: 'کاربر غیرمجاز به ثبت نظر',
+    description: 'فقط یک نوبت آینده با دکتر آرمان حسینی',
+    phone: '09121111102',
+  },
+] as const;
+
+const demoAccountsEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_ACCOUNTS === 'true';
+const frontendOnlyDemo = process.env.NEXT_PUBLIC_FRONTEND_DEMO_MODE === 'true';
+const demoPassword = process.env.NEXT_PUBLIC_DEMO_ACCOUNT_PASSWORD || 'DemoRating123!';
+
+type LoginErrorResponse = {
+  detail?: unknown;
+  phone_number?: unknown;
+  password?: unknown;
+};
 
 function patientDestination(): string {
   if (typeof window === 'undefined') return '/user/';
@@ -42,13 +68,7 @@ export default function LoginPage() {
       if (!(await restoreSession()) || !active) return;
       const user = await getCurrentUser();
       if (!active) return;
-      if (user.role === 'DOCTOR') {
-        router.push("/doctor/");
-      } else if (user.role === 'ADMIN') {
-        router.push("/admin/");
-      } else {
-        router.push(patientDestination());
-      }
+      router.replace(getRoleHomePath(user.role, patientDestination()));
     };
     void redirectExistingSession();
     return () => { active = false; };
@@ -75,8 +95,9 @@ export default function LoginPage() {
           password: password,
           user_type: userType
       });
-      const data = response.data;
+      const data = response.data as AuthResponse;
       setAccessToken(data.access);
+      notifyAuthSessionChanged();
 
       // --- Success Message (Sonner) ---
       toast.success("ورود موفقیت‌آمیز", {
@@ -88,15 +109,11 @@ export default function LoginPage() {
 
       // --- Delay Redirect ---
       setTimeout(() => {
-        if (userType === 'DOCTOR') {
-          router.push("/doctor/");
-        } else {
-          router.push(patientDestination());
-        }
+        router.replace(getRoleHomePath(data.user.role, patientDestination()));
       }, 1500);
 
-    } catch (err: any) {
-      const data = err.response?.data;
+    } catch (err: unknown) {
+      const data = axios.isAxiosError<LoginErrorResponse>(err) ? err.response?.data : undefined;
       const errorMessage = data?.detail || data?.phone_number || data?.password || "اطلاعات ورود نامعتبر است.";
       setError(typeof errorMessage === 'string' ? errorMessage : "اطلاعات ورود نامعتبر است.");
     } finally {
@@ -126,7 +143,7 @@ export default function LoginPage() {
             ورود به حساب کاربری
           </h1>
           <div className="w-10 h-10 flex items-center justify-center">
-            <Image src={"/images/logo.png"} width={40} height={40} alt="" />
+            <Image src={"/images/logo.png"} width={55} height={48} alt="" />
           </div>
         </div>
 
@@ -163,13 +180,45 @@ export default function LoginPage() {
           </button>
         </div>
 
+        {demoAccountsEnabled ? (
+          <section className="rounded-2xl border border-[#9BD8E4] bg-[#F0FAFC]/90 p-3" aria-labelledby="demo-accounts-title">
+            <h2 id="demo-accounts-title" className="text-sm font-black text-[#176D78]">
+              ورود سریع با حساب آزمایشی
+            </h2>
+            {frontendOnlyDemo ? (
+              <p className="mt-1 text-[11px] font-bold text-[#2993A3]">
+                حالت مستقل فرانت‌اند؛ بدون نیاز به اجرای Backend
+              </p>
+            ) : null}
+            <div className="mt-2 grid gap-2">
+              {demoAccounts.map((account) => (
+                <button
+                  key={account.phone}
+                  type="button"
+                  className="min-h-11 rounded-xl border border-[#B9E1E6] bg-white px-3 py-2 text-right transition-colors hover:border-[#2993A3] hover:bg-[#F7FDFE]"
+                  onClick={() => {
+                    setActiveTab('patient');
+                    setPhone(account.phone);
+                    setPassword(demoPassword);
+                    setError(null);
+                  }}
+                >
+                  <strong className="block text-xs text-[#176D78]">{account.label}</strong>
+                  <span className="mt-1 block text-[11px] leading-5 text-slate-600">{account.description}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {/* ================= Login Form ================= */}
         <form onSubmit={handleLogin} className="flex flex-col gap-5 mt-2">
 
           {/* --- Row 3: Phone Input --- */}
           <div className="flex flex-col gap-2">
-            <label className="text-sm font-bold text-slate-800 mr-2">شماره تلفن همراه:</label>
+            <label htmlFor="login-phone" className="text-sm font-bold text-slate-800 mr-2">شماره تلفن همراه:</label>
             <input
+              id="login-phone"
               type="tel"
               dir="ltr"
               value={phone}
@@ -182,9 +231,10 @@ export default function LoginPage() {
 
           {/* --- Row 4: Password Input --- */}
           <div className="flex flex-col gap-2">
-            <label className="text-sm font-bold text-slate-800 mr-2">رمز عبور:</label>
+            <label htmlFor="login-password" className="text-sm font-bold text-slate-800 mr-2">رمز عبور:</label>
             <div className="relative w-full">
               <input
+                id="login-password"
                 type={showPassword ? "text" : "password"}
                 dir="ltr"
                 value={password}

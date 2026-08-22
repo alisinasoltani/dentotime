@@ -1,5 +1,6 @@
 import api from "./api";
 import type {
+  ChatContactDirectory,
   ChatMessage,
   ChatThread,
   MessageCursorPage,
@@ -78,5 +79,32 @@ export async function getOrCreateThread(): Promise<ChatThread> {
   const response = await api.post<ChatThread>(
     "/chat/threads/get_or_create/",
   );
+  return response.data;
+}
+
+export async function getChatContacts(
+  search = "",
+  role: "ALL" | "USER" | "DOCTOR" = "ALL",
+): Promise<ChatContactDirectory> {
+  const response = await api.get<ChatContactDirectory>("/chat/contacts/", {
+    params: { search, role },
+  });
+  return response.data;
+}
+
+export async function pinChatContact(contactId: string | number): Promise<void> {
+  await api.post("/chat/contacts/pins/", { contact_id: contactId });
+}
+
+export async function unpinChatContact(contactId: string | number): Promise<void> {
+  await api.delete(`/chat/contacts/${contactId}/pin/`);
+}
+
+export async function createDirectThread(
+  contactId: string | number,
+): Promise<ChatThread> {
+  const response = await api.post<ChatThread>("/chat/threads/direct/", {
+    contact_id: contactId,
+  });
   return response.data;
 }

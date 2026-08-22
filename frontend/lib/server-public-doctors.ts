@@ -6,6 +6,7 @@ import type {
   DoctorDetail,
   PaginatedResponse,
   PublicDoctor,
+  PublicCatalog,
   Review,
 } from "@/lib/types";
 
@@ -30,7 +31,7 @@ async function publicApi<T>(path: string): Promise<T | null> {
 
 export const getServerDoctorsPage = cache(
   async (search = "", page = 1): Promise<PaginatedResponse<PublicDoctor>> => {
-    const query = new URLSearchParams({ page: String(page) });
+    const query = new URLSearchParams({ page: String(page), page_size: "100" });
     if (search) query.set("search", search);
     return (
       await publicApi<PaginatedResponse<PublicDoctor>>(`/doctors/list/?${query}`)
@@ -40,6 +41,10 @@ export const getServerDoctorsPage = cache(
 
 export const getServerDoctorPreview = cache(async (): Promise<PublicDoctor[]> => (
   await publicApi<PublicDoctor[]>("/doctors/preview/") ?? []
+));
+
+export const getServerPublicCatalog = cache(async (): Promise<PublicCatalog> => (
+  await publicApi<PublicCatalog>("/doctors/catalog/") ?? { services: [], insurances: [] }
 ));
 
 export const getServerDoctorDetail = cache(

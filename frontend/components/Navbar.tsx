@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { CalendarDays, Menu, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useBookingExperience } from "@/components/booking/BookingExperience";
+import { AUTH_SESSION_EVENT, getCurrentUser, restoreSession } from "@/lib/auth";
+import type { UserRole } from "@/lib/types";
 
 const navItems = [
   { label: "صفحه اصلی", href: "/" },
@@ -19,14 +21,41 @@ const navItems = [
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { openBooking, openLogin, isAuthenticated } = useBookingExperience();
+  const [role, setRole] = useState<UserRole | null>(null);
+  const { openBooking } = useBookingExperience();
+
+  useEffect(() => {
+    let requestVersion = 0;
+    const syncSession = async () => {
+      const version = ++requestVersion;
+      try {
+        if (!(await restoreSession())) {
+          if (version === requestVersion) setRole(null);
+          return;
+        }
+        const user = await getCurrentUser();
+        if (version === requestVersion) setRole(user.role);
+      } catch {
+        if (version === requestVersion) setRole(null);
+      }
+    };
+    void syncSession();
+    window.addEventListener(AUTH_SESSION_EVENT, syncSession);
+    return () => {
+      requestVersion += 1;
+      window.removeEventListener(AUTH_SESSION_EVENT, syncSession);
+    };
+  }, []);
+
+  const panelHref = role === "USER" ? "/user" : role === "DOCTOR" ? "/doctor" : "/admin";
+  const panelLabel = role === "USER" ? "پنل کاربری" : role === "DOCTOR" ? "پنل پزشک" : "پنل مدیریت";
 
   return (
     <>
     <header className="fixed inset-x-0 top-0 z-40 border-b border-[#DCEFF1] bg-white/95 backdrop-blur-xl" dir="rtl">
       <div className="mx-auto flex h-16 w-full items-center gap-3 px-4 sm:px-6 lg:h-[72px] lg:px-8">
         <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="دنتوتایم، صفحه اصلی">
-          <Image src="/images/logo.png" alt="دنتوتایم" width={142} height={42} priority className="h-10 w-auto object-contain lg:h-12" />
+          <Image src="/images/logo.png" alt="دنتوتایم" width={55} height={48} priority className="object-contain" />
         </Link>
 
         <nav className="mr-6 hidden flex-1 items-center justify-center gap-6 lg:flex" aria-label="منوی اصلی">
@@ -42,13 +71,10 @@ export default function Navbar() {
         </nav>
 
         <div className="mr-auto flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={openLogin}
-            className="hidden h-11 rounded-sm cursor-pointer border-[#2993A3] bg-white px-5 font-bold text-[#2993A3] hover:bg-[#EFFAFB] sm:inline-flex"
-          >
-            {isAuthenticated ? "حساب کاربری" : "ورود و ثبت نام"}
+          <Button asChild variant="outline" className="hidden h-11 rounded-sm cursor-pointer border-[#2993A3] bg-white px-5 font-bold text-[#2993A3] hover:bg-[#EFFAFB] sm:inline-flex">
+            <Link href={role ? panelHref : "/login"}>
+              {role ? panelLabel : "ورود و ثبت نام"}
+            </Link>
           </Button>
           <Button
             type="button"
@@ -87,21 +113,20 @@ export default function Navbar() {
                 {item.label}
               </Link>
             ))}
-            <button
-              type="button"
-              onClick={() => {
-                setMobileOpen(false);
-                openLogin();
-              }}
+            <Link
+              href={role ? panelHref : "/login"}
+              onClick={() => setMobileOpen(false)}
               className="col-span-2 min-h-11 rounded-sm border border-[#2993A3] text-sm font-bold text-[#2993A3] sm:hidden"
             >
-              ورود و ثبت نام
-            </button>
+              <span className="flex min-h-11 items-center justify-center">
+                {role ? panelLabel : "ورود و ثبت نام"}
+              </span>
+            </Link>
           </div>
         </nav>
       )}
     </header>
-    <div className="h-[65px] lg:h-[85px]" aria-hidden="true" />
+    <div className="h-[65px] lg:h-[72px]" aria-hidden="true" />
     </>
   );
 }

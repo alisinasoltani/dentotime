@@ -9,7 +9,18 @@ from django.db.models import Count
 
 from core.assets import AssetBindingError, lock_attachable_asset
 from core.models import FileAsset
-from .models import NormalUser, Doctor, DoctorReview, DoctorDocument, User, OTPChallenge
+from .models import (
+    DentalService,
+    Doctor,
+    DoctorDocument,
+    DoctorReview,
+    DoctorReviewAnswer,
+    InsuranceProvider,
+    NormalUser,
+    OTPChallenge,
+    RatingParameter,
+    User,
+)
 from .otp import consume_grant
 from .validators import normalize_phone_number, validate_e164_phone
 
@@ -264,16 +275,95 @@ class DoctorVerificationSubmitSerializer(serializers.ModelSerializer):
             
         return instance
 
-class StrictRatingField(serializers.IntegerField):
+class StrictIntegerField(serializers.IntegerField):
     def to_internal_value(self, data):
         if isinstance(data, bool) or not isinstance(data, int):
             self.fail("invalid")
         return super().to_internal_value(data)
 
 
+class RatingParameterSerializer(serializers.ModelSerializer):
+    def validate_options(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Options must be a list.")
+        normalized = []
+        seen = set()
+        for option in value:
+            if not isinstance(option, dict):
+                raise serializers.ValidationError("Each option must be an object.")
+            option_value = option.get("value")
+            label = str(option.get("label", "")).strip()
+            if isinstance(option_value, bool) or not isinstance(option_value, int):
+                raise serializers.ValidationError("Option values must be integers.")
+            if not 0 <= option_value <= 5 or option_value in seen or not label:
+                raise serializers.ValidationError("Options need unique values from 0 to 5 and labels.")
+            seen.add(option_value)
+            normalized.append({"value": option_value, "label": label})
+        return normalized
+
+    def validate(self, attrs):
+        input_type = attrs.get("input_type", getattr(self.instance, "input_type", None))
+        options = attrs.get("options", getattr(self.instance, "options", []))
+        is_active = attrs.get("is_active", getattr(self.instance, "is_active", True))
+        if input_type == RatingParameter.InputType.STAR and options:
+            raise serializers.ValidationError({"options": "Star parameters do not use options."})
+        if input_type != RatingParameter.InputType.STAR and not options:
+            raise serializers.ValidationError({"options": "This parameter requires at least one option."})
+        if (
+            self.instance
+            and self.instance.answers.exists()
+            and input_type != self.instance.input_type
+        ):
+            raise serializers.ValidationError(
+                {"input_type": "A parameter with recorded answers cannot change input type."}
+            )
+        if (
+            self.instance
+            and self.instance.input_type == RatingParameter.InputType.STAR
+            and self.instance.is_active
+            and not is_active
+            and not RatingParameter.objects.filter(
+                input_type=RatingParameter.InputType.STAR,
+                is_active=True,
+            ).exclude(pk=self.instance.pk).exists()
+        ):
+            raise serializers.ValidationError(
+                {"is_active": "At least one star parameter must remain active."}
+            )
+        return attrs
+
+    class Meta:
+        model = RatingParameter
+        fields = (
+            "id", "key", "label", "prompt", "input_type", "options", "position",
+            "is_active", "created_at", "updated_at",
+        )
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
+class DoctorReviewAnswerSerializer(serializers.ModelSerializer):
+    parameter_id = serializers.IntegerField(read_only=True)
+    key = serializers.CharField(source="parameter.key", read_only=True)
+    label = serializers.CharField(source="parameter.label", read_only=True)
+    input_type = serializers.CharField(source="parameter.input_type", read_only=True)
+    option_label = serializers.SerializerMethodField()
+
+    def get_option_label(self, obj):
+        for option in obj.parameter.options:
+            if option.get("value") == obj.value:
+                return option.get("label", "")
+        return ""
+
+    class Meta:
+        model = DoctorReviewAnswer
+        fields = (
+            "parameter_id", "key", "label", "input_type", "value", "option_label"
+        )
+
+
 class DoctorReviewSerializer(serializers.ModelSerializer):
-    rating = StrictRatingField(min_value=1, max_value=5)
-    comment = serializers.CharField(required=False, allow_blank=True, max_length=2000, trim_whitespace=True)
+    rating = serializers.FloatField(read_only=True)
+    answers = DoctorReviewAnswerSerializer(many=True, read_only=True)
     reviewer_display_name = serializers.SerializerMethodField()
 
     def get_reviewer_display_name(self, obj):
@@ -285,12 +375,61 @@ class DoctorReviewSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DoctorReview
-        fields = ("id", "reviewer_display_name", "rating", "comment", "created_at", "updated_at")
-        read_only_fields = ("id", "reviewer_display_name", "created_at", "updated_at")
+        fields = (
+            "id", "reviewer_display_name", "rating", "answers", "comment",
+            "created_at", "updated_at",
+        )
+        read_only_fields = fields
+
+
+class DoctorReviewAnswerInputSerializer(serializers.Serializer):
+    parameter_id = serializers.IntegerField(min_value=1)
+    value = StrictIntegerField(min_value=0, max_value=5)
+
+
+class DoctorReviewSubmissionSerializer(serializers.Serializer):
+    answers = DoctorReviewAnswerInputSerializer(many=True, allow_empty=False)
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=2000,
+        trim_whitespace=True,
+    )
+
+    def validate_answers(self, answers):
+        submitted = {answer["parameter_id"]: answer["value"] for answer in answers}
+        if len(submitted) != len(answers):
+            raise serializers.ValidationError("Each parameter may be answered only once.")
+
+        parameters = list(RatingParameter.objects.filter(is_active=True))
+        expected_ids = {parameter.pk for parameter in parameters}
+        submitted_ids = set(submitted)
+        if submitted_ids != expected_ids:
+            raise serializers.ValidationError(
+                "All currently active rating parameters must be answered."
+            )
+
+        errors = {}
+        for parameter in parameters:
+            value = submitted[parameter.pk]
+            if parameter.input_type == RatingParameter.InputType.STAR and not 1 <= value <= 5:
+                errors[str(parameter.pk)] = "Choose a star rating from 1 to 5."
+            elif parameter.input_type == RatingParameter.InputType.RECOMMENDATION and value not in {0, 1}:
+                errors[str(parameter.pk)] = "Choose yes or no."
+            elif parameter.input_type == RatingParameter.InputType.WAIT_TIME:
+                option_values = {option.get("value") for option in parameter.options}
+                if value not in option_values:
+                    errors[str(parameter.pk)] = "Choose one of the configured wait times."
+        if errors:
+            raise serializers.ValidationError(errors)
+        return answers
 
 
 class RatingVoterSerializer(serializers.ModelSerializer):
     voter = serializers.SerializerMethodField()
+    rating = serializers.FloatField(read_only=True)
+    answers = DoctorReviewAnswerSerializer(many=True, read_only=True)
 
     def get_voter(self, obj):
         return {
@@ -301,7 +440,23 @@ class RatingVoterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DoctorReview
-        fields = ("id", "voter", "rating", "comment", "created_at", "updated_at")
+        fields = (
+            "id", "voter", "rating", "answers", "comment", "created_at", "updated_at"
+        )
+
+
+class DentalServiceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DentalService
+        fields = ("id", "slug", "title", "short_title", "description", "icon", "position")
+        read_only_fields = fields
+
+
+class InsuranceProviderSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InsuranceProvider
+        fields = ("id", "name", "position")
+        read_only_fields = fields
 
 class PublicDoctorListSerializer(serializers.ModelSerializer):
     """سریالایزر عمومی برای نمایش لیست دکترها در سایت"""
@@ -309,12 +464,16 @@ class PublicDoctorListSerializer(serializers.ModelSerializer):
     vote_count = serializers.IntegerField(read_only=True)
     average_rating = serializers.FloatField(read_only=True)
     display_name = serializers.CharField(read_only=True)
+    slug = serializers.CharField(source="username", read_only=True)
+    services = DentalServiceSerializer(many=True, read_only=True)
+    insurances = InsuranceProviderSerializer(many=True, read_only=True)
 
     class Meta:
         model = Doctor
         fields = (
-            "id", "first_name", "last_name", "display_name", "clinic_name",
-            "profile_picture", "likes_count", "average_rating", "vote_count",
+            "id", "slug", "first_name", "last_name", "display_name", "clinic_name",
+            "profile_picture", "specialty", "bio", "experience", "address", "map_url",
+            "services", "insurances", "likes_count", "average_rating", "vote_count",
         )
 
 class PublicDoctorDetailSerializer(serializers.ModelSerializer):
@@ -324,12 +483,16 @@ class PublicDoctorDetailSerializer(serializers.ModelSerializer):
     average_rating = serializers.FloatField(read_only=True)
     display_name = serializers.CharField(read_only=True)
     is_liked = serializers.SerializerMethodField()
+    slug = serializers.CharField(source="username", read_only=True)
+    services = DentalServiceSerializer(many=True, read_only=True)
+    insurances = InsuranceProviderSerializer(many=True, read_only=True)
 
     class Meta:
         model = Doctor
         fields = (
-            "id", "first_name", "last_name", "display_name", "clinic_name",
-            "profile_picture", "likes_count", "is_liked", "average_rating", "vote_count",
+            "id", "slug", "first_name", "last_name", "display_name", "clinic_name",
+            "profile_picture", "specialty", "bio", "experience", "address", "map_url",
+            "services", "insurances", "likes_count", "is_liked", "average_rating", "vote_count",
         )
 
     def get_is_liked(self, obj):

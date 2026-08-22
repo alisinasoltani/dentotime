@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useDoctorContext } from '@/context/doctor-context';
+import { getRoleHomePath } from '@/lib/role-routing';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -29,7 +30,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     // 2. Wrong Role (cross-role access guard)
     if (user.role !== 'DOCTOR') {
-      router.replace('/admin'); // Redirect admins away
+      router.replace(getRoleHomePath(user.role));
       return;
     }
 

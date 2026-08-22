@@ -174,6 +174,32 @@ def test_completed_asset_binds_once_without_exposing_storage_key(
 
 
 @pytest.mark.django_db
+def test_patient_can_bind_owned_scanned_attachment_to_own_thread(
+    authed_client, normal_user, monkeypatch
+):
+    monkeypatch.setattr("messaging.views.queue_new_message", lambda *args, **kwargs: None)
+    thread = MessageThread.objects.create(
+        participant=normal_user,
+        thread_type=MessageThread.ThreadType.USER_ADMIN,
+    )
+    asset = available_asset(
+        owner=normal_user,
+        purpose=FileAsset.Purpose.CHAT_ATTACHMENT,
+        thread=thread,
+    )
+
+    created = authed_client.post(
+        f"/api/v1/chat/threads/{thread.pk}/messages/",
+        {"body": "patient scan", "asset_ids": [str(asset.pk)]},
+        format="json",
+    )
+
+    assert created.status_code == 201, created.data
+    assert created.data["attachments"][0]["asset_id"] == str(asset.pk)
+    assert MessageAttachment.objects.filter(asset=asset).count() == 1
+
+
+@pytest.mark.django_db
 def test_verification_accepts_only_owned_scoped_verification_assets(
     doctor_client, doctor_user, admin_user
 ):

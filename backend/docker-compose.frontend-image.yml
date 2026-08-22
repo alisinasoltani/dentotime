@@ -1,0 +1,11 @@
+# Overlay for servers that receive a prebuilt frontend image.
+#
+# Always combine this file with docker-compose.http.yml and pass --no-build:
+#   docker compose --env-file .env.server \
+#     -f docker-compose.http.yml \
+#     -f docker-compose.frontend-image.yml \
+#     up -d --no-build --no-deps frontend
+services:
+  frontend:
+    image: ${FRONTEND_IMAGE:-dentotime-frontend:latest}
+    pull_policy: never

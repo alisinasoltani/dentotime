@@ -15,24 +15,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { dentists, insurers, type Service } from "@/lib/site-data";
+import type { DentalService, InsuranceProvider, PublicDoctor } from "@/lib/types";
 
-export function ServiceDirectory({ service }: { service: Service }) {
+export function ServiceDirectory({
+  service,
+  doctors,
+  insurances,
+}: {
+  service: DentalService;
+  doctors: PublicDoctor[];
+  insurances: InsuranceProvider[];
+}) {
   const [search, setSearch] = useState("");
   const [insurance, setInsurance] = useState("all");
   const [sort, setSort] = useState("rating");
 
   const results = useMemo(() => {
     const query = search.trim();
-    return dentists
-      .filter((dentist) => dentist.serviceSlugs.includes(service.slug))
+    return doctors
+      .filter((dentist) => dentist.services.some((item) => item.slug === service.slug))
       .filter((dentist) => {
         if (!query) return true;
-        return `${dentist.firstName} ${dentist.lastName} ${dentist.specialty} ${dentist.clinic}`.includes(query);
+        return `${dentist.first_name} ${dentist.last_name} ${dentist.specialty} ${dentist.clinic_name}`.includes(query);
       })
-      .filter((dentist) => insurance === "all" || insurance === "آزاد" || dentist.insurances.includes(insurance))
-      .toSorted((a, b) => (sort === "reviews" ? b.reviews - a.reviews : b.rating - a.rating));
-  }, [insurance, search, service.slug, sort]);
+      .filter((dentist) => insurance === "all" || insurance === "آزاد" || dentist.insurances.some((item) => item.name === insurance))
+      .toSorted((a, b) => (sort === "reviews" ? b.vote_count - a.vote_count : b.average_rating - a.average_rating));
+  }, [doctors, insurance, search, service.slug, sort]);
 
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#F8FDFD_0%,#FFFFFF_38%)] pb-20" dir="rtl">
@@ -72,7 +80,7 @@ export function ServiceDirectory({ service }: { service: Service }) {
               <SelectContent position="popper" align="start">
                 <SelectGroup>
                   <SelectItem value="all">همه بیمه‌ها</SelectItem>
-                  {insurers.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                  {insurances.map((item) => <SelectItem key={item.id} value={item.name}>{item.name}</SelectItem>)}
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -101,17 +109,17 @@ export function ServiceDirectory({ service }: { service: Service }) {
         <div className="mt-4 flex flex-col gap-3">
           {results.map((dentist) => (
             <article key={dentist.id} className="grid items-center gap-4 rounded-[22px] border border-[#D7E9EC] bg-white p-4 shadow-[0_10px_30px_rgba(50,139,154,0.06)] transition hover:border-[#75C1C7] md:grid-cols-[1.25fr_1fr_auto] md:p-5">
-              <Link href={`/doctors/${dentist.id}`} className="flex min-w-0 items-center gap-4 rounded-xl focus-visible:outline-3 focus-visible:outline-[#75C1C7]/45">
-                <Image src={dentist.image} alt={`دکتر ${dentist.firstName} ${dentist.lastName}`} width={96} height={96} sizes="96px" className="size-20 shrink-0 rounded-[18px] bg-[#EFF9FB] object-cover object-top sm:size-24" />
+              <Link href={`/doctors/${dentist.slug || dentist.id}`} className="flex min-w-0 items-center gap-4 rounded-xl focus-visible:outline-3 focus-visible:outline-[#75C1C7]/45">
+                <Image src={dentist.profile_picture || "/images/logo.png"} alt={`دکتر ${dentist.first_name} ${dentist.last_name}`} width={96} height={96} sizes="96px" className="size-20 shrink-0 rounded-[18px] bg-[#EFF9FB] object-cover object-top sm:size-24" />
                 <div className="min-w-0">
-                  <h3 className="truncate text-lg font-black text-[#222]">دکتر {dentist.firstName} {dentist.lastName}</h3>
+                  <h3 className="truncate text-lg font-black text-[#222]">دکتر {dentist.first_name} {dentist.last_name}</h3>
                   <p className="mt-1 truncate text-sm text-[#555]">{dentist.specialty}</p>
                   <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                     <span className="flex items-center gap-0.5" aria-hidden="true">
                       {[1, 2, 3, 4, 5].map((star) => <Star key={star} className="size-3.5 fill-[#F7B731] text-[#F7B731]" />)}
                     </span>
-                    <span className="text-[11px] font-bold text-[#555]">{dentist.rating}</span>
-                    <span className="text-[11px] text-[#888]">({dentist.reviews} نظر)</span>
+                    <span className="text-[11px] font-bold text-[#555]">{dentist.average_rating}</span>
+                    <span className="text-[11px] text-[#888]">({dentist.vote_count} نظر)</span>
                   </div>
                 </div>
               </Link>
@@ -122,7 +130,7 @@ export function ServiceDirectory({ service }: { service: Service }) {
                   {dentist.address}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  {dentist.insurances.slice(0, 3).map((item) => <span key={item} className="rounded-full border border-[#CFE7EA] bg-[#F7FCFC] px-2.5 py-1 text-[11px] text-[#4C747A]">{item}</span>)}
+                  {dentist.insurances.slice(0, 3).map((item) => <span key={item.id} className="rounded-full border border-[#CFE7EA] bg-[#F7FCFC] px-2.5 py-1 text-[11px] text-[#4C747A]">{item.name}</span>)}
                 </div>
               </div>
 

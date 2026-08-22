@@ -135,7 +135,7 @@ export default function SignupPage() {
 
         <div className="flex items-center justify-center gap-3">
           <h1 className="text-md md:text-xl font-bold text-slate-800">ساخت حساب کاربری</h1>
-          <Image src={"/images/logo.png"} width={40} height={40} alt="" />
+            <Image src={"/images/logo.png"} width={55} height={48} alt="" />
         </div>
 
                 

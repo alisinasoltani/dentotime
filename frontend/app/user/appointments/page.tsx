@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import api from "@/lib/api";
 import { Appointment, getAppointmentDate } from "@/lib/types";
 import AppointmentRow from "@/components/user/appointment-row";
@@ -9,12 +10,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
 
 export default function UserAppointmentsPage() {
+  const searchParams = useSearchParams();
+  const initialDoctorSearch = searchParams.get("doctor") ?? "";
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [doctorSearch, setDoctorSearch] = useState(initialDoctorSearch);
 
   const fetchAppointments = useCallback(async () => {
     setIsLoading(true);
@@ -44,13 +49,33 @@ export default function UserAppointmentsPage() {
     }
   };
 
+  const handleAttendance = async (id: string, attended: boolean) => {
+    const response = await api.post<Appointment>(`/appointments/${id}/attendance/`, { attended });
+    setAppointments((current) => current.map((appointment) => (
+      appointment.id === id ? response.data : appointment
+    )));
+  };
+
   const filteredAppointments = useMemo(() => {
     let filtered = appointments.filter(a => getAppointmentDate(a) !== null);
     if (statusFilter !== "all") {
       filtered = filtered.filter(a => a.status === statusFilter);
     }
+    const normalizedDoctor = doctorSearch.trim();
+    if (normalizedDoctor) {
+      filtered = filtered.filter((appointment) => {
+        const doctor = appointment.doctor;
+        if (!doctor) return false;
+        const names = [
+          doctor.display_name,
+          `${doctor.first_name} ${doctor.last_name}`,
+          `دکتر ${doctor.first_name} ${doctor.last_name}`,
+        ];
+        return names.some((name) => name.includes(normalizedDoctor));
+      });
+    }
     return filtered.sort((a, b) => (getAppointmentDate(b)?.getTime() || 0) - (getAppointmentDate(a)?.getTime() || 0));
-  }, [appointments, statusFilter]);
+  }, [appointments, statusFilter, doctorSearch]);
 
   return (
     <div className="w-full min-h-full flex flex-col space-y-6 bg-white rounded-2xl p-4 md:p-8">
@@ -65,7 +90,7 @@ export default function UserAppointmentsPage() {
         </Button>
       </div>
 
-      <div className="bg-white p-4 rounded-xl border border-gray-100 grid grid-cols-1 md:flex md:flex-row gap-4 md:items-center">
+      <div className="bg-white p-4 rounded-xl border border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-4 md:items-center">
         <div className={cn(
           "flex items-center gap-1 p-1 border rounded-lg w-full md:w-auto",
           statusFilter !== "all" ? "border-[#66D3F7] bg-[#F5FAFF]" : "border-gray-200"
@@ -84,6 +109,12 @@ export default function UserAppointmentsPage() {
             </SelectContent>
           </Select>
         </div>
+        <Input
+          value={doctorSearch}
+          onChange={(event) => setDoctorSearch(event.target.value)}
+          placeholder="جست‌وجوی نام پزشک"
+          aria-label="جست‌وجوی نام پزشک"
+        />
       </div>
 
       <div className="flex-1 space-y-3 pb-4">
@@ -95,7 +126,12 @@ export default function UserAppointmentsPage() {
           </div>
         ) : (
           filteredAppointments.map(appt => (
-            <AppointmentRow key={appt.id} appointment={appt} onCancel={handleCancel} />
+            <AppointmentRow
+              key={appt.id}
+              appointment={appt}
+              onCancel={handleCancel}
+              onAttendance={handleAttendance}
+            />
           ))
         )}
       </div>

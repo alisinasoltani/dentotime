@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
 
 import { ServiceDirectory } from "@/components/services/ServiceDirectory";
-import { getService, services } from "@/lib/site-data";
-
-export function generateStaticParams() {
-  return services.map((service) => ({ slug: service.slug }));
-}
+import { getServerDoctorsPage, getServerPublicCatalog } from "@/lib/server-public-doctors";
 
 export async function generateMetadata({
   params,
@@ -13,10 +10,11 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const service = getService(slug);
+  const catalog = await getServerPublicCatalog();
+  const service = catalog.services.find((item) => item.slug === slug);
   return {
-    title: `${service.title} | دنتوتایم`,
-    description: service.description,
+    title: service ? `${service.title} | دنتوتایم` : "خدمت | دنتوتایم",
+    description: service?.description ?? "خدمات دندان‌پزشکی دنتوتایم",
   };
 }
 
@@ -26,5 +24,17 @@ export default async function ServicePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  return <ServiceDirectory service={getService(slug)} />;
+  const [catalog, doctors] = await Promise.all([
+    getServerPublicCatalog(),
+    getServerDoctorsPage("", 1),
+  ]);
+  const service = catalog.services.find((item) => item.slug === slug);
+  if (!service) notFound();
+  return (
+    <ServiceDirectory
+      service={service}
+      doctors={doctors.results}
+      insurances={catalog.insurances}
+    />
+  );
 }

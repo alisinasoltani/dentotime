@@ -18,6 +18,13 @@ class AppointmentSlot(models.Model):
         BLOCKED = "BLOCKED", "Blocked"
 
     date = models.DateField()
+    doctor = models.ForeignKey(
+        "accounts.Doctor",
+        on_delete=models.PROTECT,
+        related_name="availability_slots",
+        null=True,
+        blank=True,
+    )
     start_at = models.DateTimeField()
     end_at = models.DateTimeField()
     capacity_index = models.PositiveSmallIntegerField(default=1)
@@ -35,14 +42,24 @@ class AppointmentSlot(models.Model):
         ordering = ["start_at"]
         indexes = [
             models.Index(fields=["date", "start_at"], name="slot_date_start_idx"),
+            models.Index(
+                fields=["doctor", "date", "start_at"],
+                name="slot_doctor_date_start_idx",
+            ),
         ]
         constraints = [
             models.UniqueConstraint(
                 fields=["start_at", "capacity_index"],
-                name="unique_slot_start_capacity",
+                condition=models.Q(doctor__isnull=True),
+                name="unique_global_slot_start_capacity",
+            ),
+            models.UniqueConstraint(
+                fields=["doctor", "start_at", "capacity_index"],
+                condition=models.Q(doctor__isnull=False),
+                name="unique_doctor_slot_start_capacity",
             ),
             ExclusionConstraint(
-                name="exclude_overlapping_slots_capacity",
+                name="exclude_global_slot_overlap",
                 expressions=[
                     (
                         models.Func(
@@ -55,7 +72,30 @@ class AppointmentSlot(models.Model):
                     ),
                     ("capacity_index", RangeOperators.EQUAL),
                 ],
-                condition=models.Q(status__in=["AVAILABLE", "BOOKED"]),
+                condition=models.Q(
+                    doctor__isnull=True,
+                    status__in=["AVAILABLE", "BOOKED"],
+                ),
+            ),
+            ExclusionConstraint(
+                name="exclude_doctor_slot_overlap",
+                expressions=[
+                    (
+                        models.Func(
+                            models.F("start_at"),
+                            models.F("end_at"),
+                            function="TSTZRANGE",
+                            output_field=DateTimeRangeField(),
+                        ),
+                        RangeOperators.OVERLAPS,
+                    ),
+                    ("capacity_index", RangeOperators.EQUAL),
+                    ("doctor", RangeOperators.EQUAL),
+                ],
+                condition=models.Q(
+                    doctor__isnull=False,
+                    status__in=["AVAILABLE", "BOOKED"],
+                ),
             ),
             models.CheckConstraint(
                 condition=models.Q(start_at__lt=models.F("end_at")),
@@ -69,6 +109,72 @@ class AppointmentSlot(models.Model):
 
     def __str__(self):
         return f"Slot {self.date} @ {self.start_at:%H:%M} [{self.status}]"
+
+
+class DoctorAvailabilityRule(models.Model):
+    """A saved recurring routine used by a doctor to generate appointment slots."""
+
+    doctor = models.ForeignKey(
+        "accounts.Doctor",
+        on_delete=models.CASCADE,
+        related_name="availability_rules",
+    )
+    weekday = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(0), MaxValueValidator(6)]
+    )
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    slot_duration_minutes = models.PositiveSmallIntegerField(
+        default=30,
+        validators=[MinValueValidator(5), MaxValueValidator(480)],
+    )
+    starts_on = models.DateField()
+    ends_on = models.DateField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("weekday", "start_time", "starts_on", "pk")
+        indexes = [
+            models.Index(
+                fields=("doctor", "weekday", "is_active", "starts_on", "ends_on"),
+                name="doctor_rule_lookup_idx",
+            )
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "doctor",
+                    "weekday",
+                    "start_time",
+                    "end_time",
+                    "slot_duration_minutes",
+                    "starts_on",
+                    "ends_on",
+                ),
+                name="unique_doctor_availability_rule",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(start_time__lt=models.F("end_time")),
+                name="doctor_rule_start_before_end",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(starts_on__lte=models.F("ends_on")),
+                name="doctor_rule_date_range_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(weekday__gte=0, weekday__lte=6),
+                name="doctor_rule_weekday_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    slot_duration_minutes__gte=5,
+                    slot_duration_minutes__lte=480,
+                ),
+                name="doctor_rule_duration_valid",
+            ),
+        ]
 
 
 class ClinicSchedule(models.Model):
@@ -249,6 +355,11 @@ class Appointment(models.Model):
         COMPLETED = "COMPLETED", "Completed"
         NO_SHOW = "NO_SHOW", "No Show"
 
+    class AttendanceStatus(models.TextChoices):
+        NOT_CONFIRMED = "NOT_CONFIRMED", "تأیید نشده"
+        ATTENDED = "ATTENDED", "مراجعه کردم"
+        DID_NOT_ATTEND = "DID_NOT_ATTEND", "مراجعه نکردم"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
     patient = models.ForeignKey(
@@ -258,6 +369,13 @@ class Appointment(models.Model):
         null=True,
         blank=True,
         db_index=False,
+    )
+    doctor = models.ForeignKey(
+        "accounts.Doctor",
+        on_delete=models.PROTECT,
+        related_name="appointments",
+        null=True,
+        blank=True,
     )
     slot = models.ForeignKey(AppointmentSlot, on_delete=models.PROTECT, related_name="appointments")
     idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -274,6 +392,13 @@ class Appointment(models.Model):
     admin_notes = models.TextField(blank=True, default="")
 
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING, db_index=True)
+    attendance_status = models.CharField(
+        max_length=20,
+        choices=AttendanceStatus.choices,
+        default=AttendanceStatus.NOT_CONFIRMED,
+        db_index=True,
+    )
+    attendance_confirmed_at = models.DateTimeField(null=True, blank=True)
 
     approved_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="approved_appointments")
     approved_at = models.DateTimeField(null=True, blank=True)
@@ -292,6 +417,10 @@ class Appointment(models.Model):
                 fields=["patient", "status", "-created_at"],
                 name="appt_patient_status_created",
             ),
+            models.Index(
+                fields=["patient", "doctor", "attendance_status"],
+                name="appt_patient_doctor_attend",
+            ),
         ]
         constraints = [
             models.UniqueConstraint(
@@ -306,6 +435,14 @@ class Appointment(models.Model):
                     ]
                 ),
                 name="appointment_valid_status",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    attendance_status__in=[
+                        "NOT_CONFIRMED", "ATTENDED", "DID_NOT_ATTEND"
+                    ]
+                ),
+                name="appointment_valid_attendance_status",
             ),
             models.CheckConstraint(
                 condition=~models.Q(contact_phone_number=""),

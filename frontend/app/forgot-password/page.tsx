@@ -79,7 +79,7 @@ export default function ForgotPasswordPage() {
       <div dir="rtl" className="w-full max-w-[420px] rounded-[40px] p-8 flex flex-col gap-6 my-8 relative" style={{ backgroundColor: 'rgba(242, 242, 242, 0.60)', backdropFilter: 'blur(16px)' }}>
         <div className="flex items-center justify-center gap-3">
           <h1 className="text-md md:text-xl font-bold text-slate-800">بازیابی رمز عبور</h1>
-          <Image src={"/images/logo.png"} width={40} height={40} alt="" />
+            <Image src={"/images/logo.png"} width={55} height={48} alt="" />
         </div>
 
         {step === 1 && (

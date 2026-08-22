@@ -246,6 +246,7 @@ REST_FRAMEWORK = {
         "user": "120/min",
         "login": "5/min",
         "signup": "3/hour",
+        "refresh": os.getenv("REFRESH_THROTTLE_RATE", "120/min"),
     },
 }
 
@@ -348,6 +349,10 @@ AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID", "")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY", "")
 AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME", "")
 AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL", "")
+AWS_S3_PUBLIC_ENDPOINT_URL = os.getenv(
+    "AWS_S3_PUBLIC_ENDPOINT_URL",
+    AWS_S3_ENDPOINT_URL,
+)
 AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "us-east-1")
 AWS_S3_ADDRESSING_STYLE = "path"
 AWS_S3_SERVER_SIDE_ENCRYPTION = os.getenv(

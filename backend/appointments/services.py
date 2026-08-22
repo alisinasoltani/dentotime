@@ -78,6 +78,7 @@ def _matching_idempotent_booking(
     existing,
     *,
     patient,
+    doctor,
     slot_id,
     reason,
     contact_phone_number,
@@ -86,6 +87,7 @@ def _matching_idempotent_booking(
 ):
     if (
         existing.patient_id != getattr(patient, "pk", None)
+        or existing.doctor_id != getattr(doctor, "pk", None)
         or existing.slot_id != slot_id
         or existing.reason != reason
         or existing.contact_phone_number != contact_phone_number
@@ -107,6 +109,7 @@ def _queue_booking_notifications(admin_phones, contact_phone_number):
 def book_appointment(
     *,
     patient,
+    doctor=None,
     slot_id: int,
     reason: str,
     idempotency_key,
@@ -130,6 +133,7 @@ def book_appointment(
         return _matching_idempotent_booking(
             existing,
             patient=patient,
+            doctor=doctor,
             slot_id=slot_id,
             reason=reason,
             contact_phone_number=contact_phone_number,
@@ -147,6 +151,7 @@ def book_appointment(
                 return _matching_idempotent_booking(
                     existing,
                     patient=patient,
+                    doctor=doctor,
                     slot_id=slot_id,
                     reason=reason,
                     contact_phone_number=contact_phone_number,
@@ -155,9 +160,12 @@ def book_appointment(
                 )
             if slot.status != AppointmentSlot.Status.AVAILABLE:
                 raise SlotUnavailable("This slot is no longer available.")
+            if slot.doctor_id and getattr(doctor, "pk", None) != slot.doctor_id:
+                raise SlotUnavailable("This slot belongs to another doctor.")
 
             appointment = Appointment.objects.create(
                 patient=patient,
+                doctor=doctor,
                 slot=slot,
                 status=Appointment.Status.PENDING,
                 reason=reason,
@@ -185,6 +193,7 @@ def book_appointment(
             return _matching_idempotent_booking(
                 existing,
                 patient=patient,
+                doctor=doctor,
                 slot_id=slot_id,
                 reason=reason,
                 contact_phone_number=contact_phone_number,

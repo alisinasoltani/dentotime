@@ -12,6 +12,7 @@ interface ChatStreamOptions {
   lastEventId: string | null;
   signal: AbortSignal;
   onMessage: (message: ChatMessage, eventId: string | null) => void;
+  onOpen?: () => void;
 }
 
 function parseEvent(block: string) {
@@ -61,6 +62,7 @@ export async function connectChatStream(
   if (!response.ok || !response.body) {
     throw new Error(`Chat stream failed with status ${response.status}.`);
   }
+  options.onOpen?.();
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

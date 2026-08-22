@@ -42,6 +42,9 @@ export function useChatHistory(threadId?: string) {
   const [olderPageUrl, setOlderPageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<
+    "idle" | "connecting" | "connected" | "reconnecting" | "offline"
+  >("idle");
   const latestMessageId = useRef<string | null>(null);
   const readTimer = useRef<number | null>(null);
 
@@ -60,11 +63,14 @@ export function useChatHistory(threadId?: string) {
       setMessages([]);
       setOlderPageUrl(null);
       latestMessageId.current = null;
+      setConnectionStatus("idle");
       return;
     }
     let stopped = false;
     let connectionController: AbortController | null = null;
     let lastEventId: string | null = null;
+    let onlineListener: (() => void) | null = null;
+    let resolveOnlineWait: (() => void) | null = null;
 
     const reconcileDeltas = async (signal: AbortSignal) => {
       let cursor = latestMessageId.current;
@@ -95,11 +101,27 @@ export function useChatHistory(threadId?: string) {
       });
     };
 
+    const waitUntilOnline = async () => {
+      if (navigator.onLine) return;
+      setConnectionStatus("offline");
+      await new Promise<void>((resolve) => {
+        resolveOnlineWait = resolve;
+        onlineListener = () => {
+          if (onlineListener) window.removeEventListener("online", onlineListener);
+          onlineListener = null;
+          resolveOnlineWait = null;
+          resolve();
+        };
+        window.addEventListener("online", onlineListener, { once: true });
+      });
+    };
+
     const start = async () => {
       setMessages([]);
       setOlderPageUrl(null);
       latestMessageId.current = null;
       setIsLoading(true);
+      setConnectionStatus(navigator.onLine ? "connecting" : "offline");
       try {
         const initial = await getMessages(threadId);
         if (stopped) return;
@@ -117,7 +139,9 @@ export function useChatHistory(threadId?: string) {
       let failedAttempts = 0;
       while (!stopped) {
         await waitUntilVisible();
+        await waitUntilOnline();
         if (stopped) return;
+        setConnectionStatus(failedAttempts ? "reconnecting" : "connecting");
         connectionController = new AbortController();
         const visibilityListener = () => {
           if (document.hidden) connectionController?.abort();
@@ -134,12 +158,16 @@ export function useChatHistory(threadId?: string) {
               if (eventId) lastEventId = eventId;
               scheduleRead();
             },
+            onOpen() {
+              setConnectionStatus("connected");
+            },
           });
           lastEventId = result.lastEventId;
           failedAttempts = result.reason === "unavailable" ? failedAttempts + 1 : 0;
         } catch (error) {
           if (!stopped && !document.hidden && (error as Error).name !== "AbortError") {
             failedAttempts += 1;
+            setConnectionStatus(navigator.onLine ? "reconnecting" : "offline");
             console.warn("Realtime chat reconnect scheduled", error);
           }
         } finally {
@@ -154,6 +182,10 @@ export function useChatHistory(threadId?: string) {
     return () => {
       stopped = true;
       connectionController?.abort();
+      if (onlineListener) window.removeEventListener("online", onlineListener);
+      onlineListener = null;
+      resolveOnlineWait?.();
+      resolveOnlineWait = null;
       if (readTimer.current !== null) {
         window.clearTimeout(readTimer.current);
         readTimer.current = null;
@@ -179,6 +211,7 @@ export function useChatHistory(threadId?: string) {
     isLoading,
     isLoadingOlder,
     hasOlder: Boolean(olderPageUrl),
+    connectionStatus,
     loadOlder,
     addOptimistic(message: ChatMessage) {
       setMessages((current) => mergeMessages(current, [message]));

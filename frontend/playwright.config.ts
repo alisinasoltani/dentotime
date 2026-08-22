@@ -24,6 +24,8 @@ export default defineConfig({
       ...process.env,
       NEXT_PUBLIC_API_URL: 'https://127.0.0.1:3100',
       BACKEND_INTERNAL_URL: 'https://127.0.0.1:3102',
+      NEXT_PUBLIC_ENABLE_DEMO_ACCOUNTS: 'true',
+      NEXT_PUBLIC_DEMO_ACCOUNT_PASSWORD: 'DemoRating123!',
     },
   },
   projects: [

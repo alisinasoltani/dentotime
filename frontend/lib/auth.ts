@@ -4,6 +4,13 @@ import { API_BASE_URL } from './config';
 let accessToken: string | null = null;
 let restorePromise: Promise<boolean> | null = null;
 const DEVICE_ID_KEY = 'dentotime_device_id';
+export const AUTH_SESSION_EVENT = 'dentotime:auth-session-changed';
+
+export function notifyAuthSessionChanged(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_SESSION_EVENT));
+  }
+}
 
 export function getAccessToken(): string | null {
   return accessToken;
@@ -25,6 +32,7 @@ export function clearTokens(): void {
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('user_role');
     localStorage.removeItem('user');
+    notifyAuthSessionChanged();
   }
 }
 

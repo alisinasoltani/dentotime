@@ -20,6 +20,11 @@ class IsParticipantOrAdmin(BasePermission):
         return False
 
     def has_object_permission(self, request, view, obj):
+        if obj.thread_type == obj.ThreadType.DIRECT:
+            return request.user.id in {
+                obj.direct_participant_one_id,
+                obj.direct_participant_two_id,
+            }
         if request.user.is_admin_role:
             return True
         return obj.participant_id == request.user.id

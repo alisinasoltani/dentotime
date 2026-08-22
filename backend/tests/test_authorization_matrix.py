@@ -342,7 +342,7 @@ ENDPOINTS = (
         lambda c: f"/api/v1/admin/chat/threads/{c['thread'].pk}/",
         frozenset({"admin"}),
     ),
-    EndpointCase("file_upload", "post", lambda c: "/api/v1/files/upload/", frozenset({"doctor_unverified", "doctor_rejected", "doctor_approved", "admin"})),
+    EndpointCase("file_upload", "post", lambda c: "/api/v1/files/upload/", ALL_AUTHENTICATED),
 )
 
 
@@ -509,7 +509,7 @@ def test_inactive_approved_doctor_is_not_public_or_rateable(authorization_contex
 @pytest.mark.parametrize(
     ("actor_name", "purpose", "expected_status"),
     [
-        ("patient", "profile_picture", 403),
+        ("patient", "profile_picture", 410),
         ("doctor_unverified", "verification_document", 410),
         ("doctor_unverified", "chat_attachment", 410),
         ("doctor_rejected", "verification_document", 410),

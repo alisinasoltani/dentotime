@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Headset, Loader2, Paperclip, Send, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowRight, Headset, Loader2, Paperclip, Send, WifiOff, X } from "lucide-react";
 import { toast } from "sonner";
 
 import MessageBubble from "@/components/chat/message-bubble";
@@ -39,17 +39,69 @@ export default function RoleChatWindow({
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isNearBottomRef = useRef(true);
+  const previousThreadIdRef = useRef<string | undefined>(undefined);
+
+  const getScrollViewport = useCallback(
+    () =>
+      scrollAreaRef.current?.querySelector<HTMLElement>(
+        "[data-radix-scroll-area-viewport]",
+      ) ?? null,
+    [],
+  );
 
   useEffect(() => {
-    if (scrollAreaRef.current) {
-      const viewport = scrollAreaRef.current.querySelector(
-        "[data-radix-scroll-area-viewport]",
-      );
-      if (viewport) viewport.scrollTop = viewport.scrollHeight;
-    }
-  }, [history.messages]);
+    const viewport = getScrollViewport();
+    if (!viewport) return;
 
-  useEffect(() => setIsInternalNote(false), [thread?.id]);
+    const updateBottomState = () => {
+      const remaining =
+        viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop;
+      isNearBottomRef.current = remaining <= 80;
+    };
+
+    updateBottomState();
+    viewport.addEventListener("scroll", updateBottomState, { passive: true });
+    return () => viewport.removeEventListener("scroll", updateBottomState);
+  }, [getScrollViewport, thread?.id]);
+
+  useEffect(() => {
+    const threadChanged = previousThreadIdRef.current !== thread?.id;
+    previousThreadIdRef.current = thread?.id;
+    if (!thread?.id) return;
+
+    const latestMessage = history.messages.at(-1);
+    const sentByCurrentUser =
+      latestMessage &&
+      String(latestMessage.sender.id) === String(currentUser?.id);
+    if (!threadChanged && !isNearBottomRef.current && !sentByCurrentUser) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      const viewport = getScrollViewport();
+      if (!viewport) return;
+      viewport.scrollTop = viewport.scrollHeight;
+      isNearBottomRef.current = true;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [currentUser?.id, getScrollViewport, history.messages, thread?.id]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIsInternalNote(false), 0);
+    return () => window.clearTimeout(timer);
+  }, [thread?.id]);
+
+  const handleLoadOlder = async () => {
+    const viewport = getScrollViewport();
+    const previousHeight = viewport?.scrollHeight ?? 0;
+    const previousTop = viewport?.scrollTop ?? 0;
+    await history.loadOlder();
+    window.requestAnimationFrame(() => {
+      const currentViewport = getScrollViewport();
+      if (!currentViewport) return;
+      currentViewport.scrollTop =
+        previousTop + (currentViewport.scrollHeight - previousHeight);
+    });
+  };
 
   const optimisticMessage = (
     id: string,
@@ -88,6 +140,7 @@ export default function RoleChatWindow({
       history.replaceMessage(temporaryId, saved);
     } catch {
       history.removeMessage(temporaryId);
+      setNewMessage((current) => current || body);
       toast.error("ارسال پیام ناموفق بود");
     }
   };
@@ -123,7 +176,12 @@ export default function RoleChatWindow({
       const saved = await sendMessageApi(thread.id, "", [uploaded.asset_id]);
       history.replaceMessage(temporaryId, saved);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "آپلود فایل ناموفق بود");
+      const message = error instanceof Error ? error.message : "آپلود فایل ناموفق بود";
+      toast.error(
+        navigator.onLine
+          ? message
+          : "ارتباط قطع است؛ پس از اتصال همین فایل را دوباره انتخاب کنید تا آپلود ادامه یابد.",
+      );
     } finally {
       setIsUploading(false);
       setUploadProgress(0);
@@ -142,15 +200,18 @@ export default function RoleChatWindow({
 
   const participant = thread.participant;
   const isAdministrator = currentUser?.role === "ADMIN";
-  const title = isAdministrator
+  const isDirect = thread.thread_type === "DIRECT";
+  const title = isDirect
+    ? `${participant?.first_name || ""} ${participant?.last_name || ""}`.trim()
+    : isAdministrator
     ? participant
       ? `${participant.first_name} ${participant.last_name}`.trim()
       : `${thread.guest_contact?.first_name || "مهمان"} ${thread.guest_contact?.last_name || ""}`.trim()
     : "پشتیبانی دنتو تایم";
-  const avatar = isAdministrator ? participant?.profile_picture : undefined;
+  const avatar = isAdministrator || isDirect ? participant?.profile_picture : undefined;
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col bg-white">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
       <div className="flex min-w-0 items-center gap-3 border-b border-gray-100 p-4">
         {onBack && (
           <button
@@ -165,18 +226,30 @@ export default function RoleChatWindow({
         <Avatar className="h-10 w-10 shrink-0 bg-[#E9F5F9]">
           <AvatarImage src={avatar || undefined} />
           <AvatarFallback className="bg-[#E9F5F9] text-[#2993A3]">
-            {isAdministrator ? title[0] || "؟" : <Headset className="h-5 w-5" />}
+            {isAdministrator || isDirect ? title[0] || "؟" : <Headset className="h-5 w-5" />}
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
           <h2 className="truncate font-bold text-gray-800">{title}</h2>
+          {isDirect ? (
+            <p className="truncate text-xs text-gray-500">
+              {participant?.role === "DOCTOR"
+                ? participant.specialty || "پزشک دنتوتایم"
+                : participant?.phone_number || "کاربر دنتوتایم"}
+            </p>
+          ) : null}
           {isAdministrator && !participant && thread.guest_contact && (
             <p className="text-xs text-gray-500">{thread.guest_contact.phone_number}</p>
           )}
         </div>
       </div>
 
-      <ScrollArea ref={scrollAreaRef} className="flex-1 bg-[#F9FAFB] p-4">
+      <ScrollArea
+        ref={scrollAreaRef}
+        aria-label="پیام‌های گفتگو"
+        data-testid="message-scroll-area"
+        className="min-h-0 flex-1 bg-[#F9FAFB] p-4"
+      >
         {history.hasOlder && (
           <div className="mb-4 flex justify-center">
             <Button
@@ -184,7 +257,7 @@ export default function RoleChatWindow({
               variant="outline"
               size="sm"
               disabled={history.isLoadingOlder}
-              onClick={() => void history.loadOlder()}
+              onClick={() => void handleLoadOlder()}
             >
               {history.isLoadingOlder ? "در حال دریافت…" : "نمایش پیام‌های قدیمی‌تر"}
             </Button>
@@ -206,6 +279,14 @@ export default function RoleChatWindow({
       </ScrollArea>
 
       <div className="border-t border-gray-100 bg-white p-4">
+        {history.connectionStatus !== "connected" && (
+          <p role="status" className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+            {history.connectionStatus === "offline" ? <WifiOff aria-hidden="true" /> : <Loader2 className="animate-spin" aria-hidden="true" />}
+            {history.connectionStatus === "offline"
+              ? "اینترنت قطع است؛ پیام نوشته‌شده حفظ می‌شود و آپلود قابل ادامه است."
+              : "در حال اتصال دوباره به گفت‌وگوی زنده…"}
+          </p>
+        )}
         {canWriteInternalNotes && (
           <label className="mb-2 flex cursor-pointer items-center gap-2 text-xs text-gray-600">
             <input

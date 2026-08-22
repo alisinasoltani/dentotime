@@ -45,12 +45,12 @@ def test_weekly_generation_respects_breaks_and_is_idempotent():
     AvailabilityBreak.objects.create(rule=rule, start_time=time(10), end_time=time(11))
 
     first = generate_availability(start_date=day, end_date=day)
-    first_ids = set(AppointmentSlot.objects.values_list("pk", flat=True))
+    first_ids = set(AppointmentSlot.objects.filter(date=day).values_list("pk", flat=True))
     second = generate_availability(start_date=day, end_date=day)
-    second_ids = set(AppointmentSlot.objects.values_list("pk", flat=True))
+    second_ids = set(AppointmentSlot.objects.filter(date=day).values_list("pk", flat=True))
     local_hours = [
         slot.start_at.astimezone(TEHRAN).hour
-        for slot in AppointmentSlot.objects.order_by("start_at")
+        for slot in AppointmentSlot.objects.filter(date=day).order_by("start_at")
     ]
 
     assert first.created == 2
