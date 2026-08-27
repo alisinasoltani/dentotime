@@ -69,8 +69,25 @@ export function useChatHistory(threadId?: string) {
     let stopped = false;
     let connectionController: AbortController | null = null;
     let lastEventId: string | null = null;
-    let onlineListener: (() => void) | null = null;
     let resolveOnlineWait: (() => void) | null = null;
+
+    const handleOffline = () => {
+      if (stopped) return;
+      setConnectionStatus("offline");
+      connectionController?.abort();
+    };
+
+    const handleOnline = () => {
+      if (resolveOnlineWait) {
+        resolveOnlineWait();
+        resolveOnlineWait = null;
+      } else if (!stopped) {
+        setConnectionStatus("reconnecting");
+      }
+    };
+
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
 
     const reconcileDeltas = async (signal: AbortSignal) => {
       let cursor = latestMessageId.current;
@@ -106,13 +123,6 @@ export function useChatHistory(threadId?: string) {
       setConnectionStatus("offline");
       await new Promise<void>((resolve) => {
         resolveOnlineWait = resolve;
-        onlineListener = () => {
-          if (onlineListener) window.removeEventListener("online", onlineListener);
-          onlineListener = null;
-          resolveOnlineWait = null;
-          resolve();
-        };
-        window.addEventListener("online", onlineListener, { once: true });
       });
     };
 
@@ -182,8 +192,8 @@ export function useChatHistory(threadId?: string) {
     return () => {
       stopped = true;
       connectionController?.abort();
-      if (onlineListener) window.removeEventListener("online", onlineListener);
-      onlineListener = null;
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
       resolveOnlineWait?.();
       resolveOnlineWait = null;
       if (readTimer.current !== null) {

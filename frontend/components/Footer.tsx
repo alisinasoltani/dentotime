@@ -1,5 +1,6 @@
 import Image from "next/image";
 import { Mail, MapPin, Phone, Smartphone } from "lucide-react";
+import Link from "next/link";
 import { SiInstagram, SiWhatsapp } from "react-icons/si";
 
 const contactItems = [
@@ -84,6 +85,13 @@ export default function Footer() {
               <SiInstagram className="size-5" aria-hidden="true" />
             </a>
           </div>
+        </div>
+        <div className="mx-auto flex max-w-[1180px] flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t border-[#E5F1F2] px-4 py-4 text-xs text-[#5B7074] sm:justify-start sm:px-6">
+          <Link href="/about" className="hover:text-[#2993A3]">درباره ما</Link>
+          <Link href="/terms" className="hover:text-[#2993A3]">قوانین و مقررات</Link>
+          <Link href="/privacy" className="hover:text-[#2993A3]">حریم خصوصی</Link>
+          <Link href="/refund-policy" className="hover:text-[#2993A3]">شرایط لغو و استرداد</Link>
+          <Link href="/contact" className="hover:text-[#2993A3]">تماس با ما و شکایت</Link>
         </div>
       </footer>
     </>

@@ -244,6 +244,85 @@ class ThreadListSerializer(serializers.ModelSerializer):
         )
 
 
+class AdminConversationParticipantSerializer(serializers.Serializer):
+    """A privacy-safe participant snapshot used by the administrator archive."""
+
+    id = serializers.IntegerField(allow_null=True)
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    role = serializers.CharField()
+    phone_number = serializers.CharField(required=False, allow_blank=True)
+
+
+class AdminConversationHistorySerializer(serializers.ModelSerializer):
+    """Thread summary with both sides of a conversation, including direct chats."""
+
+    participants = serializers.SerializerMethodField()
+    message_count = serializers.IntegerField(read_only=True)
+    last_message = serializers.CharField(source="_last_message", read_only=True, default="")
+
+    class Meta:
+        model = MessageThread
+        fields = (
+            "id",
+            "thread_type",
+            "status",
+            "created_at",
+            "last_message_at",
+            "last_message",
+            "message_count",
+            "participants",
+        )
+
+    @staticmethod
+    def _user_snapshot(user):
+        return {
+            "id": user.pk,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role": user.role,
+            "phone_number": user.phone_number,
+        }
+
+    def get_participants(self, instance):
+        if instance.thread_type == MessageThread.ThreadType.DIRECT:
+            return [
+                self._user_snapshot(instance.direct_participant_one),
+                self._user_snapshot(instance.direct_participant_two),
+            ]
+
+        participant = (
+            self._user_snapshot(instance.participant)
+            if instance.participant_id
+            else {
+                "id": None,
+                "first_name": instance.guest_first_name or "مهمان",
+                "last_name": instance.guest_last_name,
+                "role": Message.SenderType.GUEST,
+                "phone_number": instance.guest_phone,
+            }
+        )
+        support = (
+            self._user_snapshot(instance.assigned_admin)
+            if instance.assigned_admin_id
+            else {
+                "id": None,
+                "first_name": "پشتیبانی",
+                "last_name": "دنتوتایم",
+                "role": User.Role.ADMIN,
+                "phone_number": "",
+            }
+        )
+        return [participant, support]
+
+
+class AdminConversationHistoryDetailSerializer(AdminConversationHistorySerializer):
+    messages = MessageSerializer(many=True, read_only=True)
+
+    class Meta(AdminConversationHistorySerializer.Meta):
+        fields = AdminConversationHistorySerializer.Meta.fields + ("messages",)
+
+
 class ChatContactSerializer(ParticipantSerializer):
     is_pinned = serializers.SerializerMethodField()
     can_unpin = serializers.SerializerMethodField()

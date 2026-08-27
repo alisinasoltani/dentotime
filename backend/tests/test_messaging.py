@@ -437,6 +437,68 @@ def test_thread_list_is_paginated_and_searches_server_side(admin_client):
 
 
 @pytest.mark.django_db
+def test_users_can_search_contacts_and_start_direct_conversations(
+    authed_client, normal_user, doctor_user
+):
+    doctor_user.verification_status = Doctor.VerificationStatus.APPROVED
+    doctor_user.save(update_fields=("verification_status",))
+
+    contacts = authed_client.get("/api/v1/chat/contacts/?search=Doc&role=DOCTOR")
+    assert contacts.status_code == 200
+    assert contacts.data["can_pin"] is False
+    assert [item["id"] for item in contacts.data["results"]] == [doctor_user.pk]
+
+    created = authed_client.post(
+        "/api/v1/chat/threads/direct/",
+        {"contact_id": doctor_user.pk},
+        format="json",
+    )
+    assert created.status_code == 201
+    assert created.data["thread_type"] == MessageThread.ThreadType.DIRECT
+
+    duplicate = authed_client.post(
+        "/api/v1/chat/threads/direct/",
+        {"contact_id": doctor_user.pk},
+        format="json",
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.data["id"] == created.data["id"]
+
+
+@pytest.mark.django_db
+def test_admin_conversation_history_includes_direct_participants_and_messages(
+    admin_client, admin_user, normal_user, doctor_user
+):
+    doctor_user.verification_status = Doctor.VerificationStatus.APPROVED
+    doctor_user.save(update_fields=("verification_status",))
+    thread = MessageThread.objects.create(
+        direct_participant_one_id=min(normal_user.pk, doctor_user.pk),
+        direct_participant_two_id=max(normal_user.pk, doctor_user.pk),
+        thread_type=MessageThread.ThreadType.DIRECT,
+    )
+    create_message(thread, normal_user, "سلام پزشک")
+    create_message(thread, doctor_user, "سلام، در خدمتم")
+
+    listing = admin_client.get("/api/v1/admin/chat/history/?search=Doc")
+    assert listing.status_code == 200
+    row = next(item for item in listing.data["results"] if item["id"] == str(thread.pk))
+    assert {item["role"] for item in row["participants"]} == {User.Role.USER, User.Role.DOCTOR}
+    assert row["message_count"] == 2
+
+    detail = admin_client.get(f"/api/v1/admin/chat/history/{thread.pk}/")
+    assert detail.status_code == 200
+    assert [item["body"] for item in detail.data["messages"]] == ["سلام پزشک", "سلام، در خدمتم"]
+    assert {item["sender_type"] for item in detail.data["messages"]} == {"USER", "DOCTOR"}
+
+
+@pytest.mark.django_db
+def test_admin_conversation_history_is_admin_only(normal_user, api_client):
+    api_client.force_authenticate(user=normal_user)
+    response = api_client.get("/api/v1/admin/chat/history/")
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
 def test_message_history_query_count_is_constant(
     django_assert_num_queries, normal_user
 ):

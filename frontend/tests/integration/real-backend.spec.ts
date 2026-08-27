@@ -88,6 +88,19 @@ test.describe.serial("real PostgreSQL, Redis, and MinIO integration", () => {
     await login(page, "09121111101", patientPassword, "patient");
     await page.goto("/user/chat");
     await page.getByRole("button", { name: /گفتگوی جدید/ }).click();
+    const conversationDialog = page.getByRole("dialog");
+    await expect(conversationDialog.getByRole("heading", { name: "شروع گفتگوی جدید" })).toBeVisible();
+    await expect(conversationDialog.getByText("پشتیبانی دنتوتایم", { exact: true })).toBeVisible();
+    await conversationDialog.getByPlaceholder("جستجو بر اساس نام، موبایل یا تخصص…").fill("آرمان");
+    await expect(conversationDialog.getByText("آرمان حسینی", { exact: true })).toBeVisible();
+    await expect(conversationDialog.getByRole("button", { name: /آرمان حسینی پزشک/ })).toBeVisible();
+    await conversationDialog.getByRole("button", { name: "شروع گفتگو با آرمان حسینی" }).click();
+    await expect(page.getByRole("heading", { name: "آرمان حسینی" }).last()).toBeVisible();
+
+    await page.getByRole("button", { name: /گفتگوی جدید/ }).click();
+    const supportDialog = page.getByRole("dialog");
+    await expect(supportDialog.getByText("پشتیبانی دنتوتایم", { exact: true })).toBeVisible();
+    await supportDialog.getByRole("button", { name: "شروع گفتگو با پشتیبانی دنتوتایم" }).click();
     await expect(page.getByRole("heading", { name: "پشتیبانی دنتو تایم" }).last()).toBeVisible();
 
     await context.setOffline(true);

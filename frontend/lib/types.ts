@@ -52,6 +52,30 @@ export interface ChatContactDirectory {
   results: ChatContact[];
   pin_count: number;
   pin_limit: number;
+  can_pin?: boolean;
+}
+
+export interface AdminConversationParticipant {
+  id: number | null;
+  first_name: string;
+  last_name: string;
+  role: UserRole | "GUEST";
+  phone_number?: string;
+}
+
+export interface AdminConversationHistoryThread {
+  id: string;
+  thread_type: ChatThread["thread_type"];
+  status: ChatThread["status"];
+  created_at: string;
+  last_message_at: string | null;
+  last_message: string;
+  message_count: number;
+  participants: AdminConversationParticipant[];
+}
+
+export interface AdminConversationHistoryDetail extends AdminConversationHistoryThread {
+  messages: ChatMessage[];
 }
 
 export interface ChatMessage {

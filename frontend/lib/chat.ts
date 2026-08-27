@@ -3,6 +3,8 @@ import type {
   ChatContactDirectory,
   ChatMessage,
   ChatThread,
+  AdminConversationHistoryDetail,
+  AdminConversationHistoryThread,
   MessageCursorPage,
   MessageDeltaPage,
   PaginatedResponse,
@@ -106,5 +108,27 @@ export async function createDirectThread(
   const response = await api.post<ChatThread>("/chat/threads/direct/", {
     contact_id: contactId,
   });
+  return response.data;
+}
+
+export type AdminConversationHistoryPage = PaginatedResponse<AdminConversationHistoryThread>;
+
+export async function getAdminConversationHistory(
+  search = "",
+  pageUrl?: string,
+): Promise<AdminConversationHistoryPage> {
+  const response = await api.get<AdminConversationHistoryPage>(
+    pageUrl || "/admin/chat/history/",
+    { params: pageUrl ? undefined : { search } },
+  );
+  return response.data;
+}
+
+export async function getAdminConversationHistoryDetail(
+  threadId: string,
+): Promise<AdminConversationHistoryDetail> {
+  const response = await api.get<AdminConversationHistoryDetail>(
+    `/admin/chat/history/${threadId}/`,
+  );
   return response.data;
 }

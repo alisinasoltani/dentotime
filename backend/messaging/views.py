@@ -37,6 +37,8 @@ from messaging.permissions import CanCreateOwnThread, IsParticipantOrAdmin
 from messaging.realtime import publish_message_event
 from messaging.serializers import (
     AdminThreadUpdateSerializer,
+    AdminConversationHistoryDetailSerializer,
+    AdminConversationHistorySerializer,
     ChatContactSerializer,
     DirectThreadCreateSerializer,
     GuestMessageSerializer,
@@ -213,20 +215,20 @@ class ChatContactListView(APIView):
     permission_classes = (CanCreateOwnThread,)
 
     def get(self, request):
-        if not request.user.is_doctor_role:
-            raise PermissionDenied("Only doctors can search conversation contacts.")
-
         query = request.query_params.get("search", "").strip()[:100]
         role = request.query_params.get("role", "ALL").strip().upper()
         if role not in {"ALL", User.Role.USER, User.Role.DOCTOR}:
             raise ValidationError({"role": "Choose ALL, USER, or DOCTOR."})
 
-        owner = request.user.doctor_profile
-        pinned_rows = list(
-            PinnedChatContact.objects.filter(owner=owner)
-            .select_related("contact", "contact__doctor")
-            .order_by("created_at", "pk")
-        )
+        can_pin = request.user.is_doctor_role
+        pinned_rows = []
+        if can_pin:
+            owner = request.user.doctor_profile
+            pinned_rows = list(
+                PinnedChatContact.objects.filter(owner=owner)
+                .select_related("contact", "contact__doctor")
+                .order_by("created_at", "pk")
+            )
         pinned_ids = {row.contact_id for row in pinned_rows}
         contacts = User.objects.filter(
             is_active=True,
@@ -278,6 +280,7 @@ class ChatContactListView(APIView):
                 ).data,
                 "pin_count": len(pinned_rows),
                 "pin_limit": 5,
+                "can_pin": can_pin,
             }
         )
 
@@ -343,8 +346,6 @@ class DirectThreadCreateView(APIView):
 
     @transaction.atomic
     def post(self, request):
-        if not request.user.is_doctor_role:
-            raise PermissionDenied("Only doctors can start direct conversations.")
         serializer = DirectThreadCreateSerializer(
             data=request.data,
             context={"request": request},
@@ -517,6 +518,103 @@ class AdminThreadUpdateView(generics.RetrieveUpdateDestroyAPIView):
             thread.save(
                 update_fields=("deleted_at", "deleted_by", "status", "updated_at")
             )
+
+
+class AdminConversationHistoryListView(generics.ListAPIView):
+    """Read-only archive of every conversation, including direct patient/doctor chats."""
+
+    serializer_class = AdminConversationHistorySerializer
+    permission_classes = (IsAdminRole,)
+
+    def get_queryset(self):
+        search = self.request.query_params.get("search", "").strip()[:100]
+        visible_messages = Message.objects.filter(thread_id=OuterRef("pk"), is_deleted=False)
+        last_message = visible_messages.order_by("-created_at", "-id").values("body")[:1]
+        queryset = (
+            MessageThread.objects.all()
+            .select_related(
+                "participant",
+                "participant__doctor",
+                "assigned_admin",
+                "direct_participant_one",
+                "direct_participant_one__doctor",
+                "direct_participant_two",
+                "direct_participant_two__doctor",
+            )
+            .annotate(
+                message_count=Count("messages", filter=Q(messages__is_deleted=False)),
+                _last_message=Coalesce(
+                    Subquery(last_message, output_field=TextField()),
+                    Value(""),
+                    output_field=TextField(),
+                ),
+            )
+            .order_by("-last_message_at", "-created_at", "-id")
+        )
+        if search:
+            queryset = queryset.filter(
+                Q(participant__first_name__icontains=search)
+                | Q(participant__last_name__icontains=search)
+                | Q(participant__phone_number__icontains=search)
+                | Q(assigned_admin__first_name__icontains=search)
+                | Q(assigned_admin__last_name__icontains=search)
+                | Q(direct_participant_one__first_name__icontains=search)
+                | Q(direct_participant_one__last_name__icontains=search)
+                | Q(direct_participant_one__phone_number__icontains=search)
+                | Q(direct_participant_two__first_name__icontains=search)
+                | Q(direct_participant_two__last_name__icontains=search)
+                | Q(direct_participant_two__phone_number__icontains=search)
+                | Q(guest_first_name__icontains=search)
+                | Q(guest_last_name__icontains=search)
+                | Q(guest_phone__icontains=search)
+            )
+        return queryset
+
+
+class AdminConversationHistoryDetailView(generics.RetrieveAPIView):
+    serializer_class = AdminConversationHistoryDetailSerializer
+    permission_classes = (IsAdminRole,)
+    queryset = (
+        MessageThread.objects.all()
+        .select_related(
+            "participant",
+            "participant__doctor",
+            "assigned_admin",
+            "direct_participant_one",
+            "direct_participant_one__doctor",
+            "direct_participant_two",
+            "direct_participant_two__doctor",
+        )
+        .annotate(
+            message_count=Count("messages", filter=Q(messages__is_deleted=False)),
+            _last_message=Coalesce(
+                Subquery(
+                    Message.objects.filter(thread_id=OuterRef("pk"), is_deleted=False)
+                    .order_by("-created_at", "-id")
+                    .values("body")[:1],
+                    output_field=TextField(),
+                ),
+                Value(""),
+                output_field=TextField(),
+            ),
+        )
+        .prefetch_related(
+            Prefetch(
+                "messages",
+                queryset=Message.objects.filter(is_deleted=False)
+                .select_related("sender")
+                .prefetch_related(
+                    Prefetch(
+                        "attachments",
+                        queryset=MessageAttachment.objects.filter(is_deleted=False).select_related(
+                            "asset"
+                        ),
+                    )
+                )
+                .order_by("created_at", "id"),
+            )
+        )
+    )
 
 
 class GuestMessageView(APIView):

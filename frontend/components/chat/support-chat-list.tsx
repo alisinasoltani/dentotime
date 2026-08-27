@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import NewConversationDialog from "@/components/chat/new-conversation-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { getOrCreateThread, getThreads } from "@/lib/chat";
@@ -108,6 +109,11 @@ export default function SupportChatList({
             const name = isDirect
               ? `${thread.participant?.first_name || ""} ${thread.participant?.last_name || ""}`.trim()
               : "پشتیبانی دنتو تایم";
+            const roleLabel = isDirect
+              ? thread.participant?.role === "DOCTOR"
+                ? "پزشک"
+                : "کاربر"
+              : "پشتیبانی";
             return (
             <div key={thread.id}>
               <button
@@ -124,9 +130,17 @@ export default function SupportChatList({
                   </span>
                 )}
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-sm font-semibold text-gray-800">
-                    {name}
-                  </h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className="truncate text-sm font-semibold text-gray-800">
+                      {name}
+                    </h3>
+                    <Badge
+                      variant="secondary"
+                      className="shrink-0 rounded-full bg-[#E9F5F9] px-2 py-0.5 text-[10px] text-[#247F8D]"
+                    >
+                      {roleLabel}
+                    </Badge>
+                  </div>
                   <p className="truncate text-xs text-gray-500">
                     {thread.last_message || "بدون پیام"}
                   </p>

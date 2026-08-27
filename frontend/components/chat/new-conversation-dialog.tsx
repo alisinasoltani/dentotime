@@ -57,6 +57,7 @@ function ContactRow({
   isBusy,
   onStart,
   onTogglePin,
+  canPin,
 }: {
   contact: ChatContact;
   pinCount: number;
@@ -64,6 +65,7 @@ function ContactRow({
   isBusy: boolean;
   onStart: () => void;
   onTogglePin: () => void;
+  canPin: boolean;
 }) {
   const name = contactName(contact);
   const isSupport = contact.role === "SUPPORT";
@@ -100,41 +102,43 @@ function ContactRow({
         </span>
       </button>
 
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="ghost"
-        disabled={pinDisabled || isBusy}
-        onClick={onTogglePin}
-        aria-label={
-          isSupport
-            ? "پشتیبانی همیشه پین است"
-            : contact.is_pinned
-              ? `برداشتن پین ${name}`
-              : `پین کردن ${name}`
-        }
-        title={
-          isSupport
-            ? "پشتیبانی همیشه بالای فهرست می‌ماند"
-            : !contact.is_pinned && pinCount >= pinLimit
-              ? "حداکثر ۵ مخاطب قابل پین است"
-              : undefined
-        }
-        className={cn(
-          "shrink-0 rounded-full",
-          contact.is_pinned && "bg-amber-50 text-amber-600 hover:bg-amber-100",
-        )}
-      >
-        {isBusy ? (
-          <Loader2 className="animate-spin" />
-        ) : isSupport ? (
-          <LockKeyhole />
-        ) : contact.is_pinned ? (
-          <PinOff />
-        ) : (
-          <Pin />
-        )}
-      </Button>
+      {canPin ? (
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          disabled={pinDisabled || isBusy}
+          onClick={onTogglePin}
+          aria-label={
+            isSupport
+              ? "پشتیبانی همیشه پین است"
+              : contact.is_pinned
+                ? `برداشتن پین ${name}`
+                : `پین کردن ${name}`
+          }
+          title={
+            isSupport
+              ? "پشتیبانی همیشه بالای فهرست می‌ماند"
+              : !contact.is_pinned && pinCount >= pinLimit
+                ? "حداکثر ۵ مخاطب قابل پین است"
+                : undefined
+          }
+          className={cn(
+            "shrink-0 rounded-full",
+            contact.is_pinned && "bg-amber-50 text-amber-600 hover:bg-amber-100",
+          )}
+        >
+          {isBusy ? (
+            <Loader2 className="animate-spin" />
+          ) : isSupport ? (
+            <LockKeyhole />
+          ) : contact.is_pinned ? (
+            <PinOff />
+          ) : (
+            <Pin />
+          )}
+        </Button>
+      ) : null}
 
       <Button
         type="button"
@@ -287,9 +291,11 @@ export default function NewConversationDialog({
               </button>
             ))}
           </div>
-          <span className="text-xs font-bold text-slate-500">
-            {directory?.pin_count.toLocaleString("fa-IR") || "۰"} از ۵ مخاطب پین‌شده
-          </span>
+          {directory?.can_pin ? (
+            <span className="text-xs font-bold text-slate-500">
+              {directory.pin_count.toLocaleString("fa-IR")} از ۵ مخاطب پین‌شده
+            </span>
+          ) : null}
         </div>
 
         <ScrollArea className="min-h-0 pl-3">
@@ -312,6 +318,7 @@ export default function NewConversationDialog({
                     isBusy={String(busyId) === String(contact.id)}
                     onStart={() => void startConversation(contact)}
                     onTogglePin={() => void togglePin(contact)}
+                    canPin={Boolean(directory.can_pin)}
                   />
                 ))}
               </section>
@@ -335,6 +342,7 @@ export default function NewConversationDialog({
                     isBusy={String(busyId) === String(contact.id)}
                     onStart={() => void startConversation(contact)}
                     onTogglePin={() => void togglePin(contact)}
+                    canPin={Boolean(directory?.can_pin)}
                   />
                 ))
               ) : (
