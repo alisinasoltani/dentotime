@@ -2,7 +2,7 @@
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import serializers
 from django.db.models import Count
@@ -32,13 +32,37 @@ class SignupSerializer(serializers.Serializer):
 
     USER_TYPE_CHOICES = (("USER", "Normal User"), ("DOCTOR", "Doctor"))
 
-    user_type = serializers.ChoiceField(choices=USER_TYPE_CHOICES)
-    phone_number = serializers.CharField(validators=[validate_e164_phone])
-    password = serializers.CharField(write_only=True, validators=[validate_password])
-    password_confirm = serializers.CharField(write_only=True)
-    first_name = serializers.CharField(max_length=150, required=True)
-    last_name = serializers.CharField(max_length=150, required=True)
-    otp_token = serializers.CharField(write_only=True)
+    user_type = serializers.ChoiceField(
+        choices=USER_TYPE_CHOICES,
+        error_messages={"invalid_choice": "Choose either a patient or doctor account."},
+    )
+    phone_number = serializers.CharField(
+        validators=[validate_e164_phone],
+        error_messages={"blank": "Phone number is required.", "required": "Phone number is required."},
+    )
+    password = serializers.CharField(
+        write_only=True,
+        validators=[validate_password],
+        error_messages={"blank": "Password is required.", "required": "Password is required."},
+    )
+    password_confirm = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": "Password confirmation is required.", "required": "Password confirmation is required."},
+    )
+    first_name = serializers.CharField(
+        max_length=150,
+        required=True,
+        error_messages={"blank": "First name is required.", "required": "First name is required."},
+    )
+    last_name = serializers.CharField(
+        max_length=150,
+        required=True,
+        error_messages={"blank": "Last name is required.", "required": "Last name is required."},
+    )
+    otp_token = serializers.CharField(
+        write_only=True,
+        error_messages={"blank": "Verify the one-time password before creating your account.", "required": "Verify the one-time password before creating your account."},
+    )
 
     def validate(self, attrs: dict) -> dict:
         if attrs["password"] != attrs.pop("password_confirm"):
@@ -55,7 +79,9 @@ class SignupSerializer(serializers.Serializer):
         model_class = NormalUser if user_type == "USER" else Doctor
 
         if User.objects.select_for_update().filter(phone_number=phone).exists():
-            raise serializers.ValidationError({"detail": "Unable to create this account."})
+            raise serializers.ValidationError(
+                {"phone_number": "An account with this phone number already exists. Please sign in instead."}
+            )
         try:
             consume_grant(
                 token=otp_token,
@@ -64,12 +90,22 @@ class SignupSerializer(serializers.Serializer):
             )
         except ValueError as exc:
             raise serializers.ValidationError({"otp_token": str(exc)}) from exc
-        user = model_class.objects.create_user(
-            phone_number=phone,
-            password=password,
-            role=user_type,
-            **validated_data,
-        )
+        try:
+            user = model_class.objects.create_user(
+                phone_number=phone,
+                password=password,
+                role=user_type,
+                **validated_data,
+            )
+        except IntegrityError as exc:
+            # Keep concurrent signup attempts from surfacing as an opaque 500.
+            if User.objects.filter(phone_number=phone).exists():
+                raise serializers.ValidationError(
+                    {"phone_number": "An account with this phone number already exists. Please sign in instead."}
+                ) from exc
+            raise serializers.ValidationError(
+                {"detail": "We could not create the account because of a database conflict. Please try again."}
+            ) from exc
         if user_type == "USER":
             from appointments.services import claim_guest_appointments
 

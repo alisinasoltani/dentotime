@@ -605,6 +605,19 @@ class RequestOTPView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
+            normalized_phone = normalize_phone_number(phone)
+            # A signup OTP is only for creating a new account.  Rejecting it
+            # here avoids consuming SMS quota and makes the next action clear.
+            if purpose == OTPChallenge.Purpose.SIGNUP and User.objects.filter(
+                phone_number=normalized_phone
+            ).exists():
+                return Response(
+                    {
+                        "detail": "An account with this phone number already exists. Please sign in instead.",
+                        "code": "ACCOUNT_EXISTS",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
             challenge = create_challenge(request, phone, purpose)
         except DjangoValidationError:
             return Response({"detail": "A valid phone number is required."}, status=status.HTTP_400_BAD_REQUEST)

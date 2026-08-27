@@ -285,6 +285,27 @@ def test_authenticated_password_change_uses_phone_otp(
         password="ExistingPass123!",
         role=User.Role.USER,
     )
+
+
+@pytest.mark.django_db
+def test_signup_otp_is_not_sent_to_existing_account(sms_codes):
+    User.objects.create_user(
+        phone_number=PHONE,
+        password="ExistingUserPass123!",
+        role=User.Role.USER,
+        first_name="Existing",
+        last_name="User",
+    )
+    response = APIClient().post(
+        "/api/v1/auth/request-otp/",
+        {"phone_number": PHONE, "purpose": SIGNUP},
+        format="json",
+        HTTP_X_DEVICE_ID="test-browser-device",
+    )
+
+    assert response.status_code == 409
+    assert response.data["code"] == "ACCOUNT_EXISTS"
+    assert not sms_codes
     client = APIClient()
     client.force_authenticate(user=user)
 
