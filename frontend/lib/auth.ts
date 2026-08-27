@@ -39,17 +39,35 @@ export function clearTokens(): void {
   }
 }
 
-function createDeviceId(): string {
-  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+/**
+ * Create a client-side UUID even when the app is served over plain HTTP.
+ *
+ * `crypto.randomUUID()` is only exposed in secure contexts (HTTPS/localhost),
+ * but Dentotime can also be reached by an IP over HTTP during deployment.
+ * `getRandomValues` is available there; the final fallback keeps non-browser
+ * test environments from throwing before a request is sent.
+ */
+export function createClientId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
 
-  // randomUUID is restricted to secure contexts (HTTPS/localhost), while
-  // getRandomValues is still available on an HTTP deployment addressed by IP.
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
-  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`;
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
+    return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10).join('')}`;
+  }
+
+  // Last-resort fallback for non-secure/non-browser runtimes. It is used only
+  // for temporary DOM ids and idempotency keys, not as a security primitive.
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createDeviceId(): string {
+  return createClientId();
 }
 
 export function getDeviceId(): string | null {

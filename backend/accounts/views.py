@@ -56,6 +56,7 @@ from .otp import (
     verify_challenge,
 )
 from .permissions import IsAdminRole, IsDoctorRole, IsNormalUser
+from .validators import normalize_phone_number
 from .serializers import (
     LoginSerializer, SignupSerializer, UserDetailSerializer,
     UserProfileSerializer, PasswordChangeSerializer,
@@ -295,7 +296,7 @@ class MeView(RetrieveUpdateAPIView):
 
 
 class PasswordChangeView(APIView):
-    """Change current user's password."""
+    """Change current user's password after old-password or OTP verification."""
     permission_classes = (IsAuthenticated,)
 
     def post(self, request):
@@ -304,15 +305,60 @@ class PasswordChangeView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         user = request.user
-        if not user.check_password(serializer.validated_data["old_password"]):
-            return Response({"detail": "Wrong old password."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        with transaction.atomic():
-            locked_user = User.objects.select_for_update().get(pk=user.pk)
-            set_password_and_revoke(locked_user, serializer.validated_data["new_password"])
+        old_password = serializer.validated_data.get("old_password")
+        otp_token = serializer.validated_data.get("otp_token")
+        try:
+            with transaction.atomic():
+                locked_user = User.objects.select_for_update().get(pk=user.pk)
+                if otp_token:
+                    consume_grant(
+                        token=otp_token,
+                        raw_phone=locked_user.phone_number,
+                        purpose=OTPChallenge.Purpose.PASSWORD_CHANGE,
+                    )
+                elif not locked_user.check_password(old_password):
+                    return Response(
+                        {"detail": "Wrong old password."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                set_password_and_revoke(locked_user, serializer.validated_data["new_password"])
+        except (ValueError, DjangoValidationError):
+            return Response({"detail": GENERIC_VERIFY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
         response = Response({"detail": "Password changed successfully."}, status=status.HTTP_200_OK)
         clear_refresh_cookie(response)
         return response
+
+
+class PasswordChangeOTPView(APIView):
+    """Send an OTP to the authenticated user's registered phone number."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request):
+        try:
+            challenge = create_challenge(
+                request,
+                request.user.phone_number,
+                OTPChallenge.Purpose.PASSWORD_CHANGE,
+            )
+        except DjangoValidationError:
+            return Response(
+                {"detail": "A valid phone number is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if challenge is None:
+            return Response(
+                {"detail": "Please wait before requesting another code."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        return Response(
+            {
+                "detail": GENERIC_REQUEST_MESSAGE,
+                "challenge_id": str(challenge.pk),
+                "phone_number": request.user.phone_number,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class AdminUserListView(ListAPIView):
@@ -549,7 +595,11 @@ class RequestOTPView(APIView):
     def post(self, request):
         phone = request.data.get("phone_number")
         purpose = request.data.get("purpose")
-        if not phone or purpose not in OTPChallenge.Purpose.values:
+        public_purposes = {
+            OTPChallenge.Purpose.SIGNUP,
+            OTPChallenge.Purpose.PASSWORD_RESET,
+        }
+        if not phone or purpose not in public_purposes:
             return Response(
                 {"detail": "A valid phone number and purpose are required."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -573,6 +623,13 @@ class VerifyOTPView(APIView):
         challenge_id = request.data.get("challenge_id")
         if not all((phone, code, challenge_id)) or purpose not in OTPChallenge.Purpose.values:
             return Response({"detail": GENERIC_VERIFY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+        if purpose == OTPChallenge.Purpose.PASSWORD_CHANGE:
+            try:
+                normalized_phone = normalize_phone_number(phone)
+            except DjangoValidationError:
+                normalized_phone = None
+            if not request.user.is_authenticated or normalized_phone != request.user.phone_number:
+                return Response({"detail": GENERIC_VERIFY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
         try:
             otp_token = verify_challenge(
                 challenge_id=challenge_id,

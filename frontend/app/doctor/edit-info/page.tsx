@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { UploadCloud, Loader2, Lock, UserCog } from "lucide-react";
+import { PasswordChangeForm } from "@/components/auth/password-change-form";
+import { UploadCloud, Loader2, UserCog } from "lucide-react";
 import { sanitizeText } from "@/lib/sanitize";
 
 const CropImageModal = dynamic(() => import("@/components/shared/crop-image-modal"), {
@@ -33,14 +34,6 @@ export default function EditDoctorInfoPage() {
     const [username, setUsername] = useState("");
     const [isSavingProfile, setIsSavingProfile] = useState(false);
     const [profileSuccess, setProfileSuccess] = useState(false);
-
-    // State های مربوط به تغییر رمز عبور
-    const [oldPassword, setOldPassword] = useState("");
-    const [newPassword, setNewPassword] = useState("");
-    const [confirmPassword, setConfirmPassword] = useState("");
-    const [isChangingPassword, setIsChangingPassword] = useState(false);
-    const [passwordError, setPasswordError] = useState<string | null>(null);
-    const [passwordSuccess, setPasswordSuccess] = useState(false);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const localProfileUrlRef = useRef<string | null>(null);
@@ -149,36 +142,6 @@ export default function EditDoctorInfoPage() {
         }
     };
 
-    // --- تابع تغییر رمز عبور ---
-    const handleChangePassword = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setPasswordError(null);
-        setPasswordSuccess(false);
-
-        if (newPassword !== confirmPassword) {
-            setPasswordError("رمز عبور جدید و تکرار آن یکسان نیستند.");
-            return;
-        }
-
-        setIsChangingPassword(true);
-        try {
-            await api.post("/users/me/change-password/", {
-                old_password: oldPassword,
-                new_password: newPassword,
-            });
-            setOldPassword("");
-            setNewPassword("");
-            setConfirmPassword("");
-            setPasswordSuccess(true);
-            setTimeout(() => setPasswordSuccess(false), 3000);
-        } catch (err: any) {
-            const errMsg = err.response?.data?.old_password?.[0] || err.response?.data?.detail || "خطا در تغییر رمز عبور.";
-            setPasswordError(errMsg);
-        } finally {
-            setIsChangingPassword(false);
-        }
-    };
-
     return (
         <div className="w-full mx-auto max-w-4xl space-y-8 bg-white rounded-2xl border border-gray-100 p-4 md:p-8">
 
@@ -265,37 +228,7 @@ export default function EditDoctorInfoPage() {
             </div>
 
             {/* بخش تغییر رمز عبور */}
-            <div className="border-t border-gray-100 pt-8">
-                <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-                    <Lock className="text-[#2993A3]" />
-                    تغییر رمز عبور
-                </h2>
-
-                {passwordError && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg">{passwordError}</div>}
-                {passwordSuccess && <p className="mb-4 text-green-600 text-sm">رمز عبور با موفقیت تغییر کرد.</p>}
-
-                <form onSubmit={handleChangePassword} className="space-y-6">
-                    <div className="space-y-2">
-                        <Label htmlFor="old_password">رمز عبور فعلی</Label>
-                        <Input id="old_password" type="password" value={oldPassword} onChange={(e) => setOldPassword(e.target.value)} required className="border-gray-200 focus:border-[#5FB4FF]" />
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-2">
-                            <Label htmlFor="new_password">رمز عبور جدید</Label>
-                            <Input id="new_password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required className="border-gray-200 focus:border-[#5FB4FF]" />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="confirm_password">تکرار رمز عبور جدید</Label>
-                            <Input id="confirm_password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required className="border-gray-200 focus:border-[#5FB4FF]" />
-                        </div>
-                    </div>
-
-                    <Button type="submit" disabled={isChangingPassword} variant="outline" className="border-[#2993A3] text-[#2993A3] hover:bg-[#F5FAFF]">
-                        {isChangingPassword ? "در حال تغییر..." : "تغییر رمز عبور"}
-                    </Button>
-                </form>
-            </div>
+            <PasswordChangeForm />
 
             <CropImageModal
                 imageSrc={imageSrc}

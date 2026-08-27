@@ -1,4 +1,5 @@
 import api from './api';
+import { createClientId } from './auth';
 import type {
   UploadFileResult,
   UploadPurpose,
@@ -347,7 +348,7 @@ export async function uploadFile(
     }
 
     if (!session) {
-      const clientUploadId = persisted?.clientUploadId || crypto.randomUUID();
+      const clientUploadId = persisted?.clientUploadId || createClientId();
       const response = await api.post<UploadSessionResponse>('/files/uploads/', {
         client_upload_id: clientUploadId,
         purpose,

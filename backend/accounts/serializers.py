@@ -124,13 +124,23 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 
 class PasswordChangeSerializer(serializers.Serializer):
-    """Serializer for changing user password."""
-    old_password = serializers.CharField(required=True)
+    """Serializer for changing a password after an old-password or OTP check."""
+    old_password = serializers.CharField(required=False, allow_blank=False, write_only=True)
+    otp_token = serializers.CharField(required=False, allow_blank=False, write_only=True)
     new_password = serializers.CharField(required=True)
 
     def validate_new_password(self, value):
         validate_password(value)
         return value
+
+    def validate(self, attrs):
+        has_old_password = bool(attrs.get("old_password"))
+        has_otp_token = bool(attrs.get("otp_token"))
+        if has_old_password == has_otp_token:
+            raise serializers.ValidationError(
+                "Submit exactly one password verification method."
+            )
+        return attrs
 
 
 class DoctorDocumentSerializer(serializers.ModelSerializer):

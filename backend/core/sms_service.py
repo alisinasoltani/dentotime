@@ -64,7 +64,7 @@ def queue_otp_sms(mobile, code):
     return _sms_executor.submit(
         send_sms,
         mobile,
-        288919,
+        settings.SMS_IR_OTP_TEMPLATE_ID,
         [{"name": "Code", "value": code}],
     )
 
@@ -87,7 +87,7 @@ def queue_new_message(mobile, time):
 
 
 def send_otp(mobile, code):
-    return send_sms(mobile, 288919, [{"name": "Code", "value": code}])
+    return send_sms(mobile, settings.SMS_IR_OTP_TEMPLATE_ID, [{"name": "Code", "value": code}])
 
 
 def send_appt_approved(mobile, date, time):

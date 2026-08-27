@@ -270,6 +270,7 @@ class OTPChallenge(models.Model):
     class Purpose(models.TextChoices):
         SIGNUP = "SIGNUP", "Signup"
         PASSWORD_RESET = "PASSWORD_RESET", "Password reset"
+        PASSWORD_CHANGE = "PASSWORD_CHANGE", "Password change"
         APPOINTMENT_CLAIM = "APPOINTMENT_CLAIM", "Appointment claim"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

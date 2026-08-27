@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, ChevronLeft, CheckCircle2, ChevronRight } from 'lucide-react';
@@ -8,7 +8,7 @@ import Image from 'next/image';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import api from '@/lib/api';
-import { getCurrentUser, notifyAuthSessionChanged, restoreSession, setAccessToken } from '@/lib/auth';
+import { notifyAuthSessionChanged, setAccessToken } from '@/lib/auth';
 import { getRoleHomePath } from '@/lib/role-routing';
 import type { AuthResponse } from '@/lib/types';
 
@@ -61,20 +61,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // --- Redirect if already logged in ---
-  useEffect(() => {
-    let active = true;
-    const redirectExistingSession = async () => {
-      if (!(await restoreSession()) || !active) return;
-      const user = await getCurrentUser();
-      if (!active) return;
-      router.replace(getRoleHomePath(user.role, patientDestination()));
-    };
-    void redirectExistingSession();
-    return () => { active = false; };
-  }, [router]);
-
   // --- Handlers ---
+  const selectRole = (role: 'doctor' | 'patient') => {
+    setActiveTab(role);
+    // A failed attempt for the other portal must not make the role controls
+    // appear stuck or keep showing the previous portal's error.
+    setError(null);
+  };
+
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
@@ -160,7 +154,8 @@ export default function LoginPage() {
         <div className="w-full bg-[#ffffff] rounded-full p-1 flex mt-2">
           <button
             type="button"
-            onClick={() => setActiveTab('doctor')}
+            aria-pressed={activeTab === 'doctor'}
+            onClick={() => selectRole('doctor')}
             className={`flex-1 py-2.5 rounded-full text-xs md:text-sm font-bold transition-all duration-300 ${activeTab === 'doctor'
               ? 'bg-[#72BFC6] text-white shadow-sm'
               : 'bg-transparent text-slate-600 hover:bg-slate-50'
@@ -170,7 +165,8 @@ export default function LoginPage() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('patient')}
+            aria-pressed={activeTab === 'patient'}
+            onClick={() => selectRole('patient')}
             className={`flex-1 py-2.5 rounded-full text-xs md:text-sm font-bold transition-all duration-300 ${activeTab === 'patient'
               ? 'bg-[#72BFC6] text-white shadow-sm'
               : 'bg-transparent text-slate-600 hover:bg-slate-50'
@@ -197,7 +193,7 @@ export default function LoginPage() {
                   type="button"
                   className="min-h-11 rounded-xl border border-[#B9E1E6] bg-white px-3 py-2 text-right transition-colors hover:border-[#2993A3] hover:bg-[#F7FDFE]"
                   onClick={() => {
-                    setActiveTab('patient');
+                    selectRole('patient');
                     setPhone(account.phone);
                     setPassword(demoPassword);
                     setError(null);

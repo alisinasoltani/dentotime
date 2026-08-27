@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   clearTokens,
+  createClientId,
   getDeviceId,
   restoreSession,
   setAccessToken,
@@ -33,6 +34,13 @@ describe("browser authentication helpers", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     expect(getDeviceId()).toBe(deviceId);
+  });
+
+  it("creates client ids when an HTTP browser exposes no crypto object", () => {
+    vi.stubGlobal("crypto", undefined);
+
+    expect(createClientId()).toMatch(/^[a-z0-9-]+$/);
+    expect(() => getDeviceId()).not.toThrow();
   });
 
   it("does not call refresh for a visitor who has never logged in", async () => {

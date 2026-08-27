@@ -11,13 +11,14 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import NormalUser, OTPChallenge, User
-from core.sms_service import send_sms
+from core.sms_service import send_otp, send_sms
 
 
 PHONE = "+989121234567"
 OTHER_PHONE = "+989121234568"
 SIGNUP = OTPChallenge.Purpose.SIGNUP
 RESET = OTPChallenge.Purpose.PASSWORD_RESET
+CHANGE = OTPChallenge.Purpose.PASSWORD_CHANGE
 
 
 @pytest.fixture(autouse=True)
@@ -273,6 +274,80 @@ def test_password_reset_rejects_weak_password_and_revokes_old_sessions(
         },
         format="json",
     ).status_code == 400
+
+
+@pytest.mark.django_db
+def test_authenticated_password_change_uses_phone_otp(
+    sms_codes, django_capture_on_commit_callbacks
+):
+    user = NormalUser.objects.create_user(
+        phone_number=PHONE,
+        password="ExistingPass123!",
+        role=User.Role.USER,
+    )
+    client = APIClient()
+    client.force_authenticate(user=user)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        requested = client.post(
+            "/api/v1/users/me/change-password/request-otp/",
+            {},
+            format="json",
+            HTTP_X_DEVICE_ID="password-change-device",
+        )
+    assert requested.status_code == 202
+    assert requested.data["phone_number"] == PHONE
+    challenge_id, code = str(requested.data["challenge_id"]), sms_codes[-1][1]
+    verified = client.post(
+        "/api/v1/auth/verify-otp/",
+        {
+            "phone_number": PHONE,
+            "purpose": CHANGE,
+            "challenge_id": challenge_id,
+            "code": code,
+        },
+        format="json",
+    )
+    assert verified.status_code == 200
+
+    changed = client.post(
+        "/api/v1/users/me/change-password/",
+        {"otp_token": verified.data["otp_token"], "new_password": "NewSecurePass456!"},
+        format="json",
+    )
+    assert changed.status_code == 200
+    user.refresh_from_db()
+    assert user.check_password("NewSecurePass456!")
+
+    assert client.post(
+        "/api/v1/users/me/change-password/",
+        {"otp_token": verified.data["otp_token"], "new_password": "AnotherPass789!"},
+        format="json",
+    ).status_code == 400
+
+
+@pytest.mark.django_db
+def test_password_change_otp_is_not_public():
+    response = APIClient().post(
+        "/api/v1/auth/request-otp/",
+        {"phone_number": PHONE, "purpose": CHANGE},
+        format="json",
+    )
+    assert response.status_code == 400
+
+
+def test_otp_uses_configured_sms_ir_template(monkeypatch, settings):
+    sent = []
+    settings.SMS_IR_OTP_TEMPLATE_ID = 123456
+    monkeypatch.setattr(
+        "core.sms_service.send_sms",
+        lambda mobile, template_id, parameters: sent.append(
+            (mobile, template_id, parameters)
+        ) or True,
+    )
+
+    assert send_otp(PHONE, "83920") is True
+    assert sent == [(PHONE, 123456, [{"name": "Code", "value": "83920"}])]
 
 
 @pytest.mark.django_db(transaction=True)

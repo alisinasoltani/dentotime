@@ -15,7 +15,7 @@ import {
 import { format as gFormat } from "date-fns";
 import { ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import api from "@/lib/api";
-import { restoreSession } from "@/lib/auth";
+import { createClientId, restoreSession } from "@/lib/auth";
 import { showBookingSuccess } from "@/components/booking-success-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { DentalService, PaginatedResponse, PublicCatalog, PublicDoctor } from "@/lib/types";
@@ -254,7 +254,7 @@ export default function BookingModal({
 
         setIsSubmitting(true);
         try {
-            idempotencyKeyRef.current ??= crypto.randomUUID();
+            idempotencyKeyRef.current ??= createClientId();
             const [firstName, ...lastNameParts] = data.fullName.trim().split(/\s+/);
             await api.post(
                 '/appointments/',

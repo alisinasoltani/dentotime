@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useChatHistory } from "@/hooks/use-chat-history";
+import { createClientId } from "@/lib/auth";
 import { sendMessageApi } from "@/lib/chat";
 import type { ChatMessage, ChatThread, User } from "@/lib/types";
 import { uploadFile } from "@/lib/upload";
@@ -127,7 +128,7 @@ export default function RoleChatWindow({
   const handleSend = async () => {
     const body = newMessage.trim();
     if (!body || !thread || !currentUser) return;
-    const temporaryId = `temporary-${crypto.randomUUID()}`;
+    const temporaryId = `temporary-${createClientId()}`;
     history.addOptimistic(optimisticMessage(temporaryId, body));
     setNewMessage("");
     try {
@@ -160,7 +161,7 @@ export default function RoleChatWindow({
         onProgress: setUploadProgress,
         signal: controller.signal,
       });
-      const temporaryId = `temporary-file-${crypto.randomUUID()}`;
+      const temporaryId = `temporary-file-${createClientId()}`;
       history.addOptimistic(
         optimisticMessage(temporaryId, "", [
           {
