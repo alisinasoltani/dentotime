@@ -61,6 +61,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Login is an explicit role-selection surface. Do not restore and redirect
+  // an existing session here while the user is choosing a portal.
+  const activeRoleLabel = activeTab === 'doctor' ? 'پزشکان' : 'مراجعان';
+
   // --- Handlers ---
   const selectRole = (role: 'doctor' | 'patient') => {
     setActiveTab(role);
@@ -175,6 +179,13 @@ export default function LoginPage() {
             بخش مراجعان
           </button>
         </div>
+
+        <p
+          aria-live="polite"
+          className="-mt-3 text-center text-xs font-bold text-[#176D78]"
+        >
+          ورود به بخش {activeRoleLabel}
+        </p>
 
         {demoAccountsEnabled ? (
           <section className="rounded-2xl border border-[#9BD8E4] bg-[#F0FAFC]/90 p-3" aria-labelledby="demo-accounts-title">
