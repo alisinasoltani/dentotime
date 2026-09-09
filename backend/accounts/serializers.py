@@ -504,6 +504,39 @@ class InsuranceProviderSerializer(serializers.ModelSerializer):
         fields = ("id", "name", "position")
         read_only_fields = fields
 
+class DoctorPublicProfileSerializer(serializers.ModelSerializer):
+    """Only self-managed public content, never identity/approval controls."""
+    services = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=DentalService.objects.filter(is_active=True),
+    )
+    insurances = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=InsuranceProvider.objects.filter(is_active=True),
+    )
+    map_url = serializers.URLField(allow_blank=True)
+
+    def validate_map_url(self, value):
+        if value and not value.lower().startswith(("https://", "http://")):
+            raise serializers.ValidationError("Use an HTTP or HTTPS map link.")
+        return value
+
+    class Meta:
+        model = Doctor
+        fields = (
+            "specialty", "bio", "experience", "clinic_name", "address", "map_url",
+            "education", "clinical_history", "certifications", "services", "insurances",
+        )
+        extra_kwargs = {
+            name: {"max_length": 10000}
+            for name in ("bio", "education", "clinical_history", "certifications", "address")
+        }
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        # Serialize profile edits with the final booking compatibility check.
+        locked = Doctor.objects.select_for_update().get(pk=instance.pk)
+        return super().update(locked, validated_data)
+
+
 class PublicDoctorListSerializer(serializers.ModelSerializer):
     """سریالایزر عمومی برای نمایش لیست دکترها در سایت"""
     likes_count = serializers.IntegerField(read_only=True)
@@ -545,6 +578,7 @@ class PublicDoctorDetailSerializer(serializers.ModelSerializer):
             "id", "slug", "first_name", "last_name", "display_name", "clinic_name",
             "profile_picture", "specialty", "bio", "experience", "address", "map_url",
             "services", "insurances", "likes_count", "is_liked", "average_rating", "vote_count",
+            "education", "clinical_history", "certifications",
         )
 
     def get_is_liked(self, obj):

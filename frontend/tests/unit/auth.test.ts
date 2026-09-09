@@ -4,6 +4,7 @@ import {
   clearTokens,
   createClientId,
   getDeviceId,
+  getAccessToken,
   restoreSession,
   setAccessToken,
 } from "@/lib/auth";
@@ -58,5 +59,32 @@ describe("browser authentication helpers", () => {
 
     clearTokens();
     expect(localStorage.getItem("dentotime_has_session")).toBeNull();
+  });
+
+  it("does not restore a session from a refresh response arriving after logout", async () => {
+    let finish!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })));
+    setAccessToken("old-access");
+    const pending = restoreSession(true);
+    clearTokens();
+    finish(new Response(JSON.stringify({ access: "late-old-access" })));
+
+    await expect(pending).resolves.toBe(false);
+    expect(getAccessToken()).toBeNull();
+    expect(localStorage.getItem("dentotime_has_session")).toBeNull();
+  });
+
+  it("does not erase a new login when an older refresh fails", async () => {
+    let finish!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finish = resolve; })));
+    setAccessToken("old-access");
+    const pending = restoreSession(true);
+    clearTokens();
+    setAccessToken("new-account-access");
+    finish(new Response("{}", { status: 401 }));
+
+    await expect(pending).resolves.toBe(false);
+    expect(getAccessToken()).toBe("new-account-access");
+    expect(localStorage.getItem("dentotime_has_session")).toBe("1");
   });
 });

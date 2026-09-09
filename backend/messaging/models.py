@@ -106,6 +106,7 @@ class MessageThread(models.Model):
                 fields=("guest_phone", "thread_type"),
                 condition=models.Q(
                     participant__isnull=True,
+                    thread_type="USER_ADMIN",
                     status="OPEN",
                     deleted_at__isnull=True,
                 ),

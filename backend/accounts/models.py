@@ -183,6 +183,9 @@ class Doctor(User):
     specialty = models.CharField(max_length=255, blank=True, default="")
     bio = models.TextField(blank=True, default="")
     experience = models.CharField(max_length=255, blank=True, default="")
+    education = models.TextField(blank=True, default="")
+    clinical_history = models.TextField(blank=True, default="")
+    certifications = models.TextField(blank=True, default="")
     address = models.TextField(blank=True, default="")
     map_url = models.URLField(blank=True, default="")
     services = models.ManyToManyField(

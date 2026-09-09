@@ -62,6 +62,20 @@ export const getRatingParameters = async (): Promise<RatingParameter[]> => {
   return res.data;
 };
 
+export async function getMatchingDoctors(insuranceId: number, serviceId: number): Promise<PublicDoctor[]> {
+  const doctors: PublicDoctor[] = [];
+  let page = 1;
+  // Filter before pagination; never silently exclude doctors after the first 100.
+  while (true) {
+    const { data } = await api.get<PaginatedResponse<PublicDoctor>>("/doctors/list/", {
+      params: { insurance_id: insuranceId, service_id: serviceId, page, page_size: 100 },
+    });
+    doctors.push(...data.results);
+    if (!data.next) return doctors;
+    page += 1;
+  }
+}
+
 export const getPublicCatalog = async (): Promise<PublicCatalog> => {
   const res = await api.get("/doctors/catalog/");
   return res.data;

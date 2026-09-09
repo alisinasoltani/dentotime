@@ -15,10 +15,10 @@ export default function UserChatPage() {
 
   return (
     <div className="mt-14 flex h-[calc(100vh-4rem)] min-h-0 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm md:mt-0">
-      <div className={`${showChatMobile ? "hidden" : "flex"} min-h-0 w-full md:flex md:w-auto`}>
+      <div className={`${showChatMobile ? "hidden" : "flex"} min-h-0 min-w-0 w-full shrink-0 md:flex md:w-80`}>
         <UserChatList onSelectThread={handleSelectThread} activeThreadId={activeThread?.id || null} onBack={() => setShowChatMobile(false)} />
       </div>
-      <div className={`${showChatMobile ? "flex" : "hidden"} min-h-0 flex-1 md:flex`}>
+      <div className={`${showChatMobile ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 md:flex`}>
         <UserChatWindow thread={activeThread} onBack={() => setShowChatMobile(false)} />
       </div>
     </div>

@@ -34,30 +34,16 @@ test("login role tabs remain switchable after a failed attempt", async ({ page }
 });
 
 
-test("a valid existing session does not redirect before choosing another login role", async ({ page }) => {
+test("a stale session cannot reset the selected login role", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("dentotime_has_session", "1");
   });
 
-  await page.route("**/api/v1/auth/token/refresh/", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ access: "existing-session-access-token" }),
-    }),
-  );
-
-  let releaseUserResponse: () => void = () => undefined;
-  const userResponseReady = new Promise<void>((resolve) => {
-    releaseUserResponse = resolve;
-  });
-  await page.route("**/api/v1/users/me/", async (route) => {
-    await userResponseReady;
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ id: 1, first_name: "کاربر", last_name: "آزمون", role: "USER" }),
-    });
+  const sessionRequests: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/v1/auth/token/refresh/") || request.url().includes("/api/v1/users/me/")) {
+      sessionRequests.push(request.url());
+    }
   });
 
   await page.goto("/login");
@@ -68,6 +54,7 @@ test("a valid existing session does not redirect before choosing another login r
   await expect(patientTab).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("ورود به بخش مراجعان", { exact: true })).toBeVisible();
 
-  releaseUserResponse();
+  await page.waitForTimeout(500);
+  expect(sessionRequests).toHaveLength(0);
   await expect(page).toHaveURL(/\/login\/?$/);
 });

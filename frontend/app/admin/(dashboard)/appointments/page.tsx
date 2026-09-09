@@ -346,20 +346,24 @@ export default function AppointmentsPage() {
                 return (
                   <div key={dateStr} className="relative group flex justify-center">
                     <button
+                      type="button"
+                      aria-label={jFormat(date, "yyyy/MM/dd")}
+                      aria-pressed={Boolean(isSelected)}
+                      data-testid="appointment-calendar-day"
                       onClick={() => { setSelectedPage(1); setSelectedCalendarDate(date); }}
-                      className="relative w-9 aspect-square h-9 md:h-12 md:w-12 rounded-full flex items-center justify-center transition-all duration-200"
+                      className="relative size-9 md:size-12 rounded-full flex items-center justify-center transition-all duration-200"
                       style={{
                         background: dayTotal > 0 ? `conic-gradient(#2993A3 ${percentage}%, #E2E8F0 ${percentage}%)` : "transparent"
                       }}
                     >
-                      <div className={cn(
-                        "absolute w-7 aspect-square inset-1 rounded-full flex items-center justify-center text-sm font-medium transition-colors",
+                      <span className={cn(
+                        "absolute inset-1 rounded-full flex items-center justify-center text-sm font-medium transition-colors",
                         isSelected ? "bg-[#2993A3] text-white" : "bg-white text-slate-700 group-hover:bg-slate-50",
                         isFriday && "text-red-500",
                         isToday(date) && !isSelected && "border border-[#00D9FF]"
                       )}>
                         {jFormat(date, "d")}
-                      </div>
+                      </span>
                     </button>
                   </div>
                 );

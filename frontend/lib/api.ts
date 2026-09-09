@@ -4,6 +4,7 @@ import {
   clearTokens,
   getAccessToken,
   getDeviceId,
+  getSessionVersion,
   restoreSession,
   setAccessToken,
 } from './auth';
@@ -19,7 +20,8 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = getAccessToken();
   const deviceId = getDeviceId();
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  const isSessionEntry = /^\/?auth\/(login|signup|token\/refresh)\/?$/.test(config.url ?? '');
+  if (token && !isSessionEntry) config.headers.Authorization = `Bearer ${token}`;
   else delete config.headers.Authorization;
   if (deviceId) config.headers['X-Device-ID'] = deviceId;
   return config;
@@ -56,6 +58,11 @@ api.interceptors.response.use(
     if (error.response?.status !== 401 || originalRequest._retry || isAuthEndpoint) {
       return Promise.reject(error);
     }
+    // A request sent by a previous account must not refresh or clear a newer session.
+    const currentToken = getAccessToken();
+    if (originalRequest.headers.Authorization !== (currentToken ? `Bearer ${currentToken}` : undefined)) {
+      return Promise.reject(error);
+    }
     originalRequest._retry = true;
 
     if (isRefreshing) {
@@ -68,6 +75,7 @@ api.interceptors.response.use(
     }
 
     isRefreshing = true;
+    const refreshVersion = getSessionVersion();
     try {
       const restored = await restoreSession(true);
       const token = getAccessToken();
@@ -78,8 +86,10 @@ api.interceptors.response.use(
       return api(originalRequest);
     } catch (refreshError) {
       processQueue(refreshError, null);
-      clearTokens();
-      if (typeof window !== 'undefined') window.location.href = getLoginPath();
+      if (getSessionVersion() === refreshVersion) {
+        clearTokens();
+        if (typeof window !== 'undefined') window.location.href = getLoginPath();
+      }
       return Promise.reject(refreshError);
     } finally {
       isRefreshing = false;

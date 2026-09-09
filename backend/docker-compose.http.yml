@@ -108,7 +108,7 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py ensure_system_admin --if-configured"]
+    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py check_demo_data --if-production && python manage.py ensure_system_admin --if-configured"]
 
   backend:
     build:

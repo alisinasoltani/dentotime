@@ -171,17 +171,23 @@ def test_direct_thread_is_unique_visible_to_both_participants_and_private_from_a
 
 
 @pytest.mark.django_db
-def test_patient_cannot_search_contacts_or_start_direct_thread():
+def test_patient_can_search_approved_doctors_and_start_multiple_direct_threads():
     normal = patient("+989121140001")
     doctor = approved_doctor("+989121140002")
     normal_client = client_for(normal)
 
-    assert normal_client.get("/api/v1/chat/contacts/").status_code == 403
+    assert normal_client.get("/api/v1/chat/contacts/").status_code == 200
     assert normal_client.post(
         "/api/v1/chat/threads/direct/",
         {"contact_id": doctor.pk},
         format="json",
-    ).status_code == 403
+    ).status_code == 201
+    colleague = approved_doctor("+989121140003")
+    assert normal_client.post(
+        "/api/v1/chat/threads/direct/",
+        {"contact_id": colleague.pk},
+        format="json",
+    ).status_code == 201
 
 
 @pytest.mark.django_db

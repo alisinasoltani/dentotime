@@ -106,6 +106,8 @@ export default function UserAppointmentsPage() {
               <SelectItem className="text-xs" value="APPROVED">تایید شده</SelectItem>
               <SelectItem className="text-xs" value="REJECTED">رد شده</SelectItem>
               <SelectItem className="text-xs" value="CANCELLED">لغو شده</SelectItem>
+              <SelectItem className="text-xs" value="COMPLETED">انجام شده</SelectItem>
+              <SelectItem className="text-xs" value="NO_SHOW">عدم مراجعه</SelectItem>
             </SelectContent>
           </Select>
         </div>

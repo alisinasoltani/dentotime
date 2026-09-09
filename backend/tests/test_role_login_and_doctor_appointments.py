@@ -4,8 +4,22 @@ import pytest
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from accounts.models import Doctor
+from accounts.models import Doctor, User
 from appointments.models import Appointment, AppointmentSlot
+
+
+@pytest.mark.django_db
+def test_password_login_ignores_an_expired_previous_session():
+    user = User.objects.create_user(
+        phone_number="+989120003333", password="ValidLoginPassword!", role="USER",
+    )
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION="Bearer expired-or-revoked-session")
+    response = client.post("/api/v1/auth/login/", {
+        "phone_number": user.phone_number, "password": "ValidLoginPassword!", "user_type": "USER",
+    })
+    assert response.status_code == 200
+    assert str(response.data["user"]["id"]) == str(user.pk)
 
 
 @pytest.mark.django_db

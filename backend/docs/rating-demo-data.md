@@ -1,5 +1,9 @@
 # Local integration accounts
 
+> Superseded: `seed_rating_demo` is retired. Use the isolated scenario demo in
+> [demo.md](demo.md). The older credentials and commands below are historical
+> reference only; they are not the current setup procedure.
+
 This seed is intentionally limited to `development` and `test`. It is repeatable and does not delete unrelated data.
 
 The application runtime never substitutes frontend-only fixtures for the API.

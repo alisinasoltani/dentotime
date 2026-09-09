@@ -18,6 +18,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   } = useDoctorContext();
 
   const isOnVerificationPage = pathname === '/doctor/verification';
+  const isOnProfilePage = pathname === '/doctor/edit-info';
 
   useEffect(() => {
     if (isUserLoading || (user && isVerificationLoading)) return;
@@ -35,7 +36,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     }
 
     // 3. Verification Gate
-    if (verificationStatus !== 'APPROVED' && !isOnVerificationPage) {
+    if (verificationStatus !== 'APPROVED' && !isOnVerificationPage && !isOnProfilePage) {
       // Force them to the verification page
       router.replace('/doctor/verification');
       return;
@@ -46,7 +47,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       router.replace('/doctor/chat');
       return;
     }
-  }, [user, isUserLoading, verificationStatus, isVerificationLoading, isOnVerificationPage, router]);
+  }, [user, isUserLoading, verificationStatus, isVerificationLoading, isOnVerificationPage, isOnProfilePage, router]);
 
   // Loading States
   if (isUserLoading || (user && isVerificationLoading)) {
@@ -63,7 +64,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   // Enforce gate visually before router effect finishes
-  if (verificationStatus !== 'APPROVED' && !isOnVerificationPage) {
+  if (verificationStatus !== 'APPROVED' && !isOnVerificationPage && !isOnProfilePage) {
     return null;
   }
 

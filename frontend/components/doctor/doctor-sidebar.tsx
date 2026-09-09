@@ -97,7 +97,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#2993A3] mt-1 transition-colors"
             >
               <Pencil className="h-3 w-3" />
-              تغییر نام یا پروفایل
+              ویرایش اطلاعات و پروفایل عمومی
             </button>
           </div>
         </div>

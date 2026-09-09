@@ -3,6 +3,7 @@ import { API_BASE_URL } from './config';
 
 let accessToken: string | null = null;
 let restorePromise: Promise<boolean> | null = null;
+let sessionVersion = 0;
 const DEVICE_ID_KEY = 'dentotime_device_id';
 const SESSION_MARKER_KEY = 'dentotime_has_session';
 export const AUTH_SESSION_EVENT = 'dentotime:auth-session-changed';
@@ -17,7 +18,13 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+export function getSessionVersion(): number {
+  return sessionVersion;
+}
+
 export function setAccessToken(token: string): void {
+  sessionVersion += 1;
+  restorePromise = null;
   accessToken = token;
   if (typeof window !== 'undefined') {
     localStorage.setItem(SESSION_MARKER_KEY, '1');
@@ -28,6 +35,8 @@ export function setAccessToken(token: string): void {
 }
 
 export function clearTokens(): void {
+  sessionVersion += 1;
+  restorePromise = null;
   accessToken = null;
   if (typeof window !== 'undefined') {
     localStorage.removeItem('access_token');
@@ -90,12 +99,15 @@ export async function restoreSession(forceRefresh = false): Promise<boolean> {
   }
   if (restorePromise) return restorePromise;
 
-  restorePromise = fetch(`${API_BASE_URL}/api/v1/auth/token/refresh/`, {
+  const startedVersion = sessionVersion;
+  const pending = fetch(`${API_BASE_URL}/api/v1/auth/token/refresh/`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
   })
     .then(async (response) => {
+      // Logout or a different login owns the session now. Ignore old responses.
+      if (startedVersion !== sessionVersion) return false;
       if (!response.ok) {
         accessToken = null;
         if (
@@ -107,19 +119,21 @@ export async function restoreSession(forceRefresh = false): Promise<boolean> {
         return false;
       }
       const payload = (await response.json()) as { access?: string };
+      if (startedVersion !== sessionVersion) return false;
       if (!payload.access) return false;
       setAccessToken(payload.access);
       return true;
     })
     .catch(() => {
-      accessToken = null;
+      if (startedVersion === sessionVersion) accessToken = null;
       return false;
     })
     .finally(() => {
-      restorePromise = null;
+      if (restorePromise === pending) restorePromise = null;
     });
 
-  return restorePromise;
+  restorePromise = pending;
+  return pending;
 }
 
 export async function getCurrentUser(): Promise<User> {

@@ -1,12 +1,13 @@
 from django.urls import path, re_path
 from .views import (
-    DoctorVerificationStatusView, DoctorVerificationSubmitView,
+    DoctorVerificationStatusView, DoctorVerificationSubmitView, DoctorPublicProfileView,
     PublicDoctorListView, PublicDoctorPreviewView, PublicDoctorDetailView,
     DoctorOwnRatingVoterListView, LikeDoctorView, PublicCatalogView, RatingParameterListView,
     RatingSummaryView, ReviewEligibilityView, ReviewListCreateView,
 )
 
 urlpatterns = [
+    path("me/profile/", DoctorPublicProfileView.as_view(), name="doctor_public_profile"),
     # مسیرهای مخصوص خود پزشکان (احراز هویت)
     path("verification/", DoctorVerificationStatusView.as_view(), name="doctor_verification_status"),
     path("verification/submit/", DoctorVerificationSubmitView.as_view(), name="doctor_verification_submit"),

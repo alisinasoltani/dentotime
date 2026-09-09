@@ -77,7 +77,7 @@ export default function SupportChatList({
   };
 
   return (
-    <div className="flex h-full w-full flex-col border-l border-gray-100 bg-white">
+    <div dir="rtl" data-testid="support-chat-sidebar" className="flex h-full min-w-0 w-full flex-col overflow-hidden border-l border-gray-100 bg-white">
       <div className="flex items-center justify-between border-b border-gray-100 p-4">
         <div className="flex items-center gap-2">
           {onBack && (
@@ -100,7 +100,7 @@ export default function SupportChatList({
           <Plus className="h-4 w-4" /> گفتگوی جدید
         </button>
       </div>
-      <ScrollArea className="flex-1">
+      <ScrollArea dir="rtl" className="min-h-0 min-w-0 flex-1" viewportClassName="[&>div]:block!">
         {threads.length === 0 ? (
           <p className="p-8 text-center text-sm text-gray-400">گفتگویی یافت نشد</p>
         ) : (
@@ -118,19 +118,29 @@ export default function SupportChatList({
             <div key={thread.id}>
               <button
                 type="button"
+                data-testid="chat-thread-row"
                 onClick={() => onSelectThread(thread)}
                 className={cn(
-                  "flex w-full items-center gap-3 p-3 text-right",
+                  "flex w-full min-w-0 items-center gap-3 p-3 text-right",
                   activeThreadId === thread.id ? "bg-[#F5FAFF]" : "hover:bg-gray-50",
                 )}
               >
-                {thread.unread_count > 0 && (
-                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#2993A3] px-1 text-[10px] font-bold text-white">
-                    {thread.unread_count}
-                  </span>
-                )}
+                <Avatar className="size-12 shrink-0 bg-[#E9F5F9]">
+                  <AvatarImage src={thread.participant?.profile_picture || undefined} alt="" />
+                  <AvatarFallback className="bg-[#E9F5F9] text-[#2993A3]">
+                    {isDirect ? (
+                      thread.participant?.role === "DOCTOR" ? (
+                        <Stethoscope className="size-5" />
+                      ) : (
+                        <UserRound className="size-5" />
+                      )
+                    ) : (
+                      <Headset className="size-5" />
+                    )}
+                  </AvatarFallback>
+                </Avatar>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <h3 className="truncate text-sm font-semibold text-gray-800">
                       {name}
                     </h3>
@@ -145,20 +155,11 @@ export default function SupportChatList({
                     {thread.last_message || "بدون پیام"}
                   </p>
                 </div>
-                <Avatar className="h-12 w-12 bg-[#E9F5F9]">
-                  <AvatarImage src={thread.participant?.profile_picture || undefined} alt={name} />
-                  <AvatarFallback className="bg-[#E9F5F9] text-[#2993A3]">
-                    {isDirect ? (
-                      thread.participant?.role === "DOCTOR" ? (
-                        <Stethoscope className="h-5 w-5" />
-                      ) : (
-                        <UserRound className="h-5 w-5" />
-                      )
-                    ) : (
-                      <Headset className="h-5 w-5" />
-                    )}
-                  </AvatarFallback>
-                </Avatar>
+                {thread.unread_count > 0 && (
+                  <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#2993A3] px-1 text-[10px] font-bold text-white">
+                    {thread.unread_count}
+                  </span>
+                )}
               </button>
               <Separator />
             </div>

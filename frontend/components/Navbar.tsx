@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { CalendarDays, Menu, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -20,11 +21,20 @@ const navItems = [
 ];
 
 export default function Navbar() {
+  const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [role, setRole] = useState<UserRole | null>(null);
   const { openBooking } = useBookingExperience();
+  const isAuthenticationRoute = ["/login", "/signup", "/forgot-password"].includes(pathname ?? "");
 
   useEffect(() => {
+    // Authentication pages must remain an explicit user choice. A stale
+    // refresh cookie or session marker can otherwise make the background
+    // /users/me request reload /login while the user is switching portals.
+    if (isAuthenticationRoute) {
+      return;
+    }
+
     let requestVersion = 0;
     const syncSession = async () => {
       const version = ++requestVersion;
@@ -45,10 +55,11 @@ export default function Navbar() {
       requestVersion += 1;
       window.removeEventListener(AUTH_SESSION_EVENT, syncSession);
     };
-  }, []);
+  }, [isAuthenticationRoute]);
 
-  const panelHref = role === "USER" ? "/user" : role === "DOCTOR" ? "/doctor" : "/admin";
-  const panelLabel = role === "USER" ? "پنل کاربری" : role === "DOCTOR" ? "پنل پزشک" : "پنل مدیریت";
+  const visibleRole = isAuthenticationRoute ? null : role;
+  const panelHref = visibleRole === "USER" ? "/user" : visibleRole === "DOCTOR" ? "/doctor" : "/admin";
+  const panelLabel = visibleRole === "USER" ? "پنل کاربری" : visibleRole === "DOCTOR" ? "پنل پزشک" : "پنل مدیریت";
 
   return (
     <>
@@ -72,8 +83,8 @@ export default function Navbar() {
 
         <div className="mr-auto flex items-center gap-2">
           <Button asChild variant="outline" className="hidden h-11 rounded-sm cursor-pointer border-[#2993A3] bg-white px-5 font-bold text-[#2993A3] hover:bg-[#EFFAFB] sm:inline-flex">
-            <Link href={role ? panelHref : "/login"}>
-              {role ? panelLabel : "ورود و ثبت نام"}
+            <Link href={visibleRole ? panelHref : "/login"}>
+              {visibleRole ? panelLabel : "ورود و ثبت نام"}
             </Link>
           </Button>
           <Button
@@ -114,12 +125,12 @@ export default function Navbar() {
               </Link>
             ))}
             <Link
-              href={role ? panelHref : "/login"}
+              href={visibleRole ? panelHref : "/login"}
               onClick={() => setMobileOpen(false)}
               className="col-span-2 min-h-11 rounded-sm border border-[#2993A3] text-sm font-bold text-[#2993A3] sm:hidden"
             >
               <span className="flex min-h-11 items-center justify-center">
-                {role ? panelLabel : "ورود و ثبت نام"}
+                {visibleRole ? panelLabel : "ورود و ثبت نام"}
               </span>
             </Link>
           </div>

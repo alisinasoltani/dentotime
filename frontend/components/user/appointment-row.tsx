@@ -91,6 +91,16 @@ const AppointmentRow = React.memo(({ appointment, onCancel, onAttendance }: Prop
               <XCircle className="h-3 w-3" /> لغو شده
             </span>
           )}
+          {status === "COMPLETED" && (
+            <span className="flex items-center gap-1 text-xs text-green-700 bg-green-50 px-3 py-1 rounded-full">
+              <CheckCircle className="h-3 w-3" /> انجام شده
+            </span>
+          )}
+          {status === "NO_SHOW" && (
+            <span className="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-3 py-1 rounded-full">
+              <XCircle className="h-3 w-3" /> عدم مراجعه
+            </span>
+          )}
         </div>
       </div>
 

@@ -29,6 +29,9 @@ if DJANGO_ENVIRONMENT not in {"development", "test", "production"}:
     raise ImproperlyConfigured("DJANGO_ENVIRONMENT must be development, test, or production.")
 
 IS_PRODUCTION = DJANGO_ENVIRONMENT == "production"
+DEMO_MODE = False  # Enabled only by the separate demo.settings module.
+if IS_PRODUCTION and (env_bool("DEMO_MODE") or os.getenv("DB_NAME", "").startswith("dentotime_demo")):
+    raise ImproperlyConfigured("Demo configuration cannot be used in production.")
 DEBUG = env_bool("DEBUG", default=False)
 SECRET_KEY = os.getenv("SECRET_KEY", "")
 JWT_SIGNING_KEY = os.getenv("JWT_SIGNING_KEY", "")

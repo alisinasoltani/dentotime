@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.7
 FROM python:3.12-slim-bookworm AS runtime
 
+ARG PIP_INDEX_URL=https://mirror-pypi.runflare.com/simple
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -14,6 +16,7 @@ RUN groupadd --system --gid 10001 dentotime \
 WORKDIR /app
 COPY requirements/production.lock /tmp/production.lock
 RUN python -m pip install \
+    --index-url "${PIP_INDEX_URL}" \
     --require-hashes \
     --no-deps \
     --timeout 300 \

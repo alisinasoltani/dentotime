@@ -23,7 +23,7 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] flex-col gap-4">
+    <div className="flex min-h-[calc(100vh-4rem)] min-w-0 flex-col gap-4 pt-14 lg:pt-0">
       <div className="flex items-center justify-end gap-2" dir="rtl">
         <Button type="button" variant={view === "inbox" ? "default" : "outline"} onClick={() => setView("inbox")} className={view === "inbox" ? "bg-[#2993A3] hover:bg-[#227D8A]" : ""}>
           <MessageSquare data-icon="inline-start" /> گفتگوهای جاری
@@ -35,7 +35,7 @@ export default function ChatPage() {
 
       {view === "history" ? <AdminChatHistoryPanel /> : <div className="flex h-[calc(100vh-8rem)] min-h-0 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       {/* لیست چت‌ها - در دسکتاپ همیشه دیده می‌شود، در موبایل اگر showChatMobile false باشد */}
-      <div className={`${showChatMobile ? "hidden" : "flex"} min-h-0 w-full md:flex md:w-auto`}>
+      <div className={`${showChatMobile ? "hidden" : "flex"} min-h-0 min-w-0 w-full shrink-0 md:flex md:w-87.5`}>
         <ChatList 
           onSelectThread={handleSelectThread} 
           activeThreadId={activeThread?.id || null} 
@@ -44,7 +44,7 @@ export default function ChatPage() {
       </div>
 
       {/* پنجره چت - در دسکتاپ همیشه دیده می‌شود، در موبایل اگر showChatMobile true باشد */}
-      <div className={`${showChatMobile ? "flex" : "hidden"} min-h-0 flex-1 md:flex`}>
+      <div className={`${showChatMobile ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 md:flex`}>
         <ChatWindow thread={activeThread} onBack={handleBack} />
       </div>
       </div>}

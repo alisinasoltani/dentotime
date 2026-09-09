@@ -60,16 +60,16 @@ export default async function DoctorProfilePage({
                 </>
               ) : <strong className="text-sm text-[#777]">بدون امتیاز</strong>}
             </div>
-            <p className="mt-6 text-[15px] leading-8 text-[#555] sm:text-base">{dentist.bio}</p>
+            <p className="mt-6 whitespace-pre-wrap break-words text-[15px] leading-8 text-[#555] sm:text-base">{dentist.bio || "معرفی پزشک هنوز ثبت نشده است."}</p>
 
             <dl className="mt-7 grid gap-4 border-y border-[#E2EFF1] py-5 sm:grid-cols-2">
               <div>
                 <dt className="text-xs text-[#777]">سابقه حرفه‌ای</dt>
-                <dd className="mt-1 text-sm font-extrabold text-[#333]">{dentist.experience}</dd>
+                <dd className="mt-1 break-words text-sm font-extrabold text-[#333]">{dentist.experience || "هنوز ثبت نشده است"}</dd>
               </div>
               <div>
                 <dt className="text-xs text-[#777]">محل فعالیت</dt>
-                <dd className="mt-1 text-sm font-extrabold text-[#333]">{dentist.clinic_name}</dd>
+                <dd className="mt-1 break-words text-sm font-extrabold text-[#333]">{dentist.clinic_name || "هنوز ثبت نشده است"}</dd>
               </div>
             </dl>
 
@@ -86,9 +86,9 @@ export default async function DoctorProfilePage({
           <section className="rounded-sm border border-[#D6E9EC] bg-white p-5 sm:p-8" aria-labelledby="resume-title">
             <h2 id="resume-title" className="text-2xl font-black text-[#222] sm:text-3xl">رزومه و سوابق حرفه‌ای</h2>
             <div className="mt-7 flex flex-col gap-7">
-              <ResumeItem icon={GraduationCap} title="تحصیلات تخصصی" text={`دوره تخصصی ${dentist.specialty.replace("متخصص ", "")}، دانشگاه علوم پزشکی تهران`} meta="۱۳۸۸ تا ۱۳۹۲" />
-              <ResumeItem icon={BriefcaseMedical} title="تجربه بالینی" text={`${dentist.clinic_name}؛ ارائه درمان‌های تخصصی و همکاری بین‌رشته‌ای با جراح، پروستودنتیست و لابراتوار دیجیتال`} meta="۱۳۹۲ تا امروز" />
-              <ResumeItem icon={Award} title="دوره‌ها و گواهی‌های تکمیلی" text="درمان مبتنی بر شواهد، برنامه‌ریزی دیجیتال و کنترل کیفیت در درمان‌های پیچیده" meta="به‌روزرسانی سالانه" />
+              <ResumeItem icon={GraduationCap} title="تحصیلات تخصصی" text={dentist.education} />
+              <ResumeItem icon={BriefcaseMedical} title="تجربه بالینی" text={dentist.clinical_history} />
+              <ResumeItem icon={Award} title="دوره‌ها و گواهی‌های تکمیلی" text={dentist.certifications} />
             </div>
 
             <div className="mt-9 border-t border-[#E2EFF1] pt-7">
@@ -109,7 +109,7 @@ export default async function DoctorProfilePage({
               </div>
               <ul className="mt-5 flex flex-col gap-2">
                 {dentist.insurances.map((insurance) => <li key={insurance.id} className="flex items-center gap-2 text-sm text-[#555]"><span className="size-1.5 rounded-full bg-[#75C1C7]" />{insurance.name}</li>)}
-                <li className="flex items-center gap-2 text-sm text-[#555]"><span className="size-1.5 rounded-sm bg-[#75C1C7]" />پذیرش آزاد</li>
+                {dentist.insurances.length === 0 && <li className="text-sm text-[#555]">هنوز بیمه‌ای ثبت نشده است.</li>}
               </ul>
             </section>
 
@@ -118,8 +118,8 @@ export default async function DoctorProfilePage({
                 <span className="flex size-11 items-center justify-center rounded-sm bg-[#E1FCFC] text-[#2993A3]"><MapPin className="size-5" /></span>
                 <h2 id="address-title" className="text-lg font-black text-[#222]">آدرس مطب</h2>
               </div>
-              <p className="mt-5 text-sm leading-7 text-[#555]">{dentist.address}</p>
-              <a href={dentist.map_url || "https://www.openstreetmap.org"} target="_blank" rel="noreferrer" className="mt-5 inline-flex min-h-11 items-center text-sm font-bold text-[#2993A3] hover:underline">مشاهده روی نقشه</a>
+              <p className="mt-5 whitespace-pre-wrap break-words text-sm leading-7 text-[#555]">{dentist.address || "آدرس هنوز ثبت نشده است."}</p>
+              {/^https?:\/\//i.test(dentist.map_url) && <a href={dentist.map_url} target="_blank" rel="noreferrer" className="mt-5 inline-flex min-h-11 items-center text-sm font-bold text-[#2993A3] hover:underline">مشاهده روی نقشه</a>}
             </section>
           </aside>
         </div>
@@ -132,12 +132,10 @@ function ResumeItem({
   icon: Icon,
   title,
   text,
-  meta,
 }: {
   icon: typeof Award;
   title: string;
   text: string;
-  meta: string;
 }) {
   return (
     <div className="grid grid-cols-[44px_1fr] gap-4">
@@ -145,9 +143,8 @@ function ResumeItem({
       <div>
         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="font-extrabold text-[#333]">{title}</h3>
-          <span className="text-xs text-[#888]">{meta}</span>
         </div>
-        <p className="mt-2 text-sm leading-7 text-[#606B6D]">{text}</p>
+        <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-7 text-[#606B6D]">{text || "هنوز توسط پزشک ثبت نشده است."}</p>
       </div>
     </div>
   );

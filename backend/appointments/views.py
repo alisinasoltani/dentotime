@@ -46,6 +46,7 @@ from .doctor_availability import (
 from .services import (
     CancellationNotAllowed,
     IdempotencyConflict,
+    InvalidBookingSelection,
     InvalidTransition,
     SlotUnavailable,
     book_appointment,
@@ -205,6 +206,8 @@ class AppointmentCreateView(APIView):
                 doctor=serializer.validated_data.get("doctor"),
                 slot_id=serializer.validated_data["slot_id"],
                 reason=serializer.validated_data.get("reason", ""),
+                service=serializer.validated_data.get("service"),
+                insurance=serializer.validated_data.get("insurance"),
                 idempotency_key=key,
                 contact_phone_number=serializer.validated_data.get("phone_number"),
                 contact_first_name=serializer.validated_data.get("first_name"),
@@ -216,6 +219,8 @@ class AppointmentCreateView(APIView):
             return Response({"slot_id": str(exc)}, status=status.HTTP_409_CONFLICT)
         except IdempotencyConflict as exc:
             return Response({"idempotency_key": str(exc)}, status=status.HTTP_409_CONFLICT)
+        except InvalidBookingSelection as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except ValueError:
             return Response(
                 {"captcha_answer": GENERIC_CAPTCHA_ERROR},

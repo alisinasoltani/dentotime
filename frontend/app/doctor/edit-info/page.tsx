@@ -1,5 +1,6 @@
 // app/doctor/edit-info/page.tsx
 "use client";
+import { PublicProfileForm } from "@/components/doctor/public-profile-form";
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
@@ -226,6 +227,8 @@ export default function EditDoctorInfoPage() {
                     </Button>
                 </form>
             </div>
+
+            <PublicProfileForm />
 
             {/* بخش تغییر رمز عبور */}
             <PasswordChangeForm />

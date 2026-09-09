@@ -29,6 +29,10 @@ def _masked_mobile(mobile: str) -> str:
 
 def send_sms(mobile, template_id, parameters):
     """Send one SMS with strict connect/read timeouts and no sensitive logs."""
+    if getattr(settings, "DEMO_MODE", False):
+        from demo.sms import capture_sms
+
+        return capture_sms(mobile, template_id, parameters)
     payload = {
         "mobile": normalize_mobile(mobile),
         "templateId": template_id,

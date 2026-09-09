@@ -13,7 +13,7 @@ from .models import (
     DoctorAvailabilityRule,
     WeeklyAvailabilityRule,
 )
-from accounts.models import Doctor, User
+from accounts.models import DentalService, Doctor, InsuranceProvider, User
 from accounts.validators import normalize_phone_number
 
 class AppointmentSlotSerializer(serializers.ModelSerializer):
@@ -64,6 +64,8 @@ class AppointmentSlotSerializer(serializers.ModelSerializer):
 
 class AppointmentCreateSerializer(serializers.Serializer):
     slot_id = serializers.IntegerField(write_only=True)
+    service_id = serializers.PrimaryKeyRelatedField(source="service", queryset=DentalService.objects.filter(is_active=True), required=False)
+    insurance_id = serializers.PrimaryKeyRelatedField(source="insurance", queryset=InsuranceProvider.objects.filter(is_active=True), required=False)
     doctor_id = serializers.PrimaryKeyRelatedField(
         source="doctor",
         queryset=Doctor.objects.filter(
@@ -128,7 +130,7 @@ class AppointmentListSerializer(serializers.ModelSerializer):
         model = Appointment
         fields = (
             "id", "patient", "doctor", "contact_phone_number", "contact_first_name",
-            "contact_last_name", "slot", "status", "reason",
+            "contact_last_name", "slot", "status", "reason", "service", "insurance",
             "attendance_status", "attendance_confirmed_at", "created_at",
             "approved_at", "cancelled_at", "can_cancel", "admin_notes"
         )

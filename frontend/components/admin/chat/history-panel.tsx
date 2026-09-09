@@ -47,10 +47,10 @@ function jalaliDate(value: string | null | undefined) {
 
 function ParticipantPills({ participants }: { participants: AdminConversationParticipant[] }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+    <span className="flex min-w-0 flex-wrap items-center gap-1.5 text-right">
       {participants.map((participant, index) => (
-        <span key={`${participant.id ?? participant.role}-${index}`} className="inline-flex min-w-0 items-center gap-1.5">
-          <span className="max-w-36 truncate text-sm font-bold text-slate-800">
+        <span key={`${participant.id ?? participant.role}-${index}`} className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+          <span className="min-w-0 break-words [overflow-wrap:anywhere] text-sm font-bold text-slate-800">
             {displayName(participant)}
           </span>
           <Badge variant="secondary" className={cn("rounded-full px-2 py-0.5 text-[10px]", roleClass(participant.role))}>
@@ -59,7 +59,7 @@ function ParticipantPills({ participants }: { participants: AdminConversationPar
           {index < participants.length - 1 ? <span className="text-xs text-slate-300">·</span> : null}
         </span>
       ))}
-    </div>
+    </span>
   );
 }
 
@@ -76,13 +76,14 @@ function ThreadRow({
   return (
     <button
       type="button"
+      data-testid="chat-history-row"
       onClick={onSelect}
       className={cn(
-        "w-full border-b border-slate-100 p-4 text-right transition-colors hover:bg-[#F8FCFD]",
+        "w-full min-w-0 border-b border-slate-100 p-4 text-right transition-colors hover:bg-[#F8FCFD]",
         selected && "bg-[#EFFAFB]",
       )}
     >
-      <div className="flex items-start gap-3">
+      <span className="flex min-w-0 items-start gap-3">
         <Avatar className="size-11 shrink-0 border border-slate-100">
           <AvatarImage src={undefined} alt="" />
           <AvatarFallback className="bg-[#EAF6F8] text-[#247F8D]">
@@ -93,11 +94,11 @@ function ThreadRow({
           <span className="block"><ParticipantPills participants={thread.participants} /></span>
           <span className="mt-2 block truncate text-xs text-slate-500">{thread.last_message || "بدون پیام"}</span>
           <span className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
-            <span className="inline-flex items-center gap-1"><CalendarDays className="size-3.5" />{jalaliDate(thread.last_message_at || thread.created_at)}</span>
+            <span className="inline-flex items-center gap-1"><CalendarDays className="size-3.5 shrink-0" /><bdi dir="ltr">{jalaliDate(thread.last_message_at || thread.created_at)}</bdi></span>
             <Badge variant="outline" className="rounded-full text-[10px]">{thread.message_count.toLocaleString("fa-IR")} پیام</Badge>
           </span>
         </span>
-      </div>
+      </span>
     </button>
   );
 }
@@ -130,12 +131,12 @@ function HistoryDetail({
         <Badge variant="outline" className="shrink-0 rounded-full text-[10px]">{detail.status === "OPEN" ? "باز" : "بایگانی‌شده"}</Badge>
       </header>
 
-      <ScrollArea className="min-h-0 flex-1 bg-[#F9FAFB] p-4">
+      <ScrollArea dir="rtl" className="min-h-0 min-w-0 flex-1 bg-[#F9FAFB] p-4 text-right" viewportClassName="[&>div]:block!">
         <div className="mx-auto flex max-w-3xl flex-col gap-3">
           {detail.messages.length ? detail.messages.map((message) => (
             <article key={message.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <strong className="truncate text-sm text-slate-800">
                     {`${message.sender.first_name} ${message.sender.last_name}`.trim() || "مهمان"}
                   </strong>
@@ -146,10 +147,10 @@ function HistoryDetail({
                 </div>
                 <time dateTime={message.created_at} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] text-slate-500">
                   <CalendarDays className="size-3.5" />
-                  {jalaliDate(message.created_at)}
+                  <bdi dir="ltr">{jalaliDate(message.created_at)}</bdi>
                 </time>
               </div>
-              {message.body ? <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{message.body}</p> : null}
+              {message.body ? <p className="mt-3 whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-right text-sm leading-7 text-slate-700">{message.body}</p> : null}
               {message.attachments.length ? <p className="mt-2 text-xs text-slate-500">{message.attachments.length.toLocaleString("fa-IR")} فایل پیوست</p> : null}
             </article>
           )) : (
@@ -212,7 +213,7 @@ export default function AdminChatHistoryPanel() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] min-h-0 flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm" dir="rtl">
+    <div data-testid="chat-history" className="flex h-[calc(100vh-4rem)] min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white text-right shadow-sm" dir="rtl">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4">
         <div>
           <h1 className="text-xl font-black text-slate-900">سوابق کامل گفتگوها</h1>
@@ -224,9 +225,9 @@ export default function AdminChatHistoryPanel() {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-        <aside className={cn("flex min-h-0 w-full flex-col border-l border-slate-100 md:w-[min(42%,390px)]", detail && "hidden md:flex")}>
-          <ScrollArea className="min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <aside aria-label="فهرست سوابق گفتگو" className={cn("flex min-h-0 min-w-0 w-full shrink-0 flex-col overflow-hidden border-l border-slate-100 md:w-[min(42%,390px)]", detail && "hidden md:flex")}>
+          <ScrollArea dir="rtl" className="min-h-0 min-w-0 flex-1" viewportClassName="[&>div]:block!">
             {isLoading ? <div className="flex min-h-40 items-center justify-center"><Loader2 className="size-6 animate-spin text-[#2993A3]" /></div> : threads.length ? threads.map((thread) => <ThreadRow key={thread.id} thread={thread} selected={thread.id === selectedId} onSelect={() => void selectThread(thread.id)} />) : <p className="p-8 text-center text-sm text-slate-500">سابقه‌ای پیدا نشد.</p>}
             {nextPage ? <div className="p-4 text-center"><Button type="button" variant="outline" size="sm" onClick={() => void loadMore()} disabled={isLoadingMore}>{isLoadingMore ? "در حال دریافت…" : "نمایش سوابق بیشتر"}</Button></div> : null}
           </ScrollArea>

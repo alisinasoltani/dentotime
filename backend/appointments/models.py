@@ -378,6 +378,9 @@ class Appointment(models.Model):
         blank=True,
     )
     slot = models.ForeignKey(AppointmentSlot, on_delete=models.PROTECT, related_name="appointments")
+    # Null only for historical and unassigned clinic bookings. Never infer old choices.
+    service = models.ForeignKey("accounts.DentalService", on_delete=models.PROTECT, null=True, blank=True)
+    insurance = models.ForeignKey("accounts.InsuranceProvider", on_delete=models.PROTECT, null=True, blank=True)
     idempotency_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
     contact_phone_number = models.CharField(

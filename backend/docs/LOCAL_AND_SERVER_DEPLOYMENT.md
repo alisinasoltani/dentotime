@@ -1,5 +1,10 @@
 # Dentotime local testing and server deployment guide
 
+For a ready-to-present environment with every role and predictable scenarios, use
+[the isolated demo guide](demo.md). The demo has separate Docker resources and
+does not seed the database described below. Before promoting an existing database,
+run `python manage.py check_demo_data` and resolve any reported sample records.
+
 This repository has a Django/DRF backend in backend/ and a Next.js frontend in frontend/. PostgreSQL is the supported application database. Redis is required for production cache and realtime chat. Large files use private S3-compatible multipart storage; the browser uploads parts directly to storage and Django coordinates the upload session.
 
 ## 1. Local prerequisites

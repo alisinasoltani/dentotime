@@ -64,7 +64,7 @@ from .serializers import (
     DoctorVerificationStatusSerializer, DoctorVerificationSubmitSerializer,
     DoctorReviewSerializer, DoctorReviewSubmissionSerializer,
     PublicDoctorListSerializer, PublicDoctorDetailSerializer,
-    DentalServiceSerializer, InsuranceProviderSerializer,
+    DentalServiceSerializer, InsuranceProviderSerializer, DoctorPublicProfileSerializer,
     RatingParameterSerializer, RatingVoterSerializer,
 )
 
@@ -198,6 +198,9 @@ class SignupView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class LoginView(APIView):
+    # Password login establishes a new identity; an old Bearer token must not
+    # reject the request before its submitted credentials are checked.
+    authentication_classes = ()
     permission_classes = (AllowAny,)
     throttle_classes = [LoginThrottle]
 
@@ -692,6 +695,15 @@ class ResetPasswordView(APIView):
         clear_refresh_cookie(response)
         return response
 
+class DoctorPublicProfileView(generics.RetrieveUpdateAPIView):
+    permission_classes = (IsDoctorRole,)
+    serializer_class = DoctorPublicProfileSerializer
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_object(self):
+        return get_object_or_404(Doctor, pk=self.request.user.pk)
+
+
 class PublicDoctorListView(generics.ListAPIView):
     """لیست عمومی دکترهای تایید شده برای نمایش در سایت (با قابلیت جستجو)"""
     serializer_class = PublicDoctorListSerializer
@@ -703,10 +715,19 @@ class PublicDoctorListView(generics.ListAPIView):
     ]
 
     def get_queryset(self):
-        return Doctor.objects.filter(
+        doctors = Doctor.objects.filter(
             verification_status=Doctor.VerificationStatus.APPROVED,
             is_active=True
-        ).prefetch_related(
+        )
+        # IDs from the shared active catalog; both conditions must match.
+        for parameter, relation in (("service_id", "services"), ("insurance_id", "insurances")):
+            value = self.request.query_params.get(parameter)
+            if value is not None:
+                if not value.isascii() or not value.isdecimal() or len(value) > 18:
+                    from rest_framework.exceptions import ValidationError
+                    raise ValidationError({parameter: "Enter a valid catalog ID."})
+                doctors = doctors.filter(**{f"{relation}__id": int(value), f"{relation}__is_active": True})
+        return doctors.prefetch_related(
             Prefetch(
                 "services",
                 queryset=DentalService.objects.filter(is_active=True).order_by("position", "pk"),

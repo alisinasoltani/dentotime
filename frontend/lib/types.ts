@@ -483,7 +483,16 @@ export interface DoctorReviewSubmission {
   comment: string;
 }
 
-export type DoctorDetail = PublicDoctor;
+export type DoctorDetail = PublicDoctor & {
+  education: string;
+  clinical_history: string;
+  certifications: string;
+};
+
+export type DoctorPublicProfile = Pick<DoctorDetail,
+  "specialty" | "bio" | "experience" | "clinic_name" | "address" | "map_url" |
+  "education" | "clinical_history" | "certifications"
+> & { services: number[]; insurances: number[] };
 
 export interface PaginatedResponse<T> {
   count: number;

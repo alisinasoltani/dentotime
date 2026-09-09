@@ -15,11 +15,11 @@ const backendOrigin = (
   process.env.BACKEND_INTERNAL_URL ?? "http://127.0.0.1:8000"
 ).replace(/\/$/, "");
 
-async function publicApi<T>(path: string): Promise<T | null> {
+async function publicApi<T>(path: string, fresh = false): Promise<T | null> {
   try {
     const response = await fetch(`${backendOrigin}/api/v1${path}`, {
       headers: { Accept: "application/json" },
-      next: { revalidate: 60, tags: ["public-doctors"] },
+      ...(fresh ? { cache: "no-store" as const } : { next: { revalidate: 60, tags: ["public-doctors"] } }),
       signal: AbortSignal.timeout(5_000),
     });
     if (!response.ok) return null;
@@ -49,7 +49,7 @@ export const getServerPublicCatalog = cache(async (): Promise<PublicCatalog> => 
 
 export const getServerDoctorDetail = cache(
   async (id: string): Promise<DoctorDetail | null> => (
-    await publicApi<DoctorDetail>(`/doctors/${encodeURIComponent(id)}/`)
+    await publicApi<DoctorDetail>(`/doctors/${encodeURIComponent(id)}/`, true)
   ),
 );
 
