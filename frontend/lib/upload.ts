@@ -1,4 +1,5 @@
 import api from './api';
+import { createClientId } from './auth';
 import type {
   UploadFileResult,
   UploadPurpose,
@@ -240,8 +241,11 @@ async function uploadPartWithRetry(
         signal,
       });
       if (!response.ok) throw new Error(`Part upload failed with HTTP ${response.status}`);
-      const etag = response.headers.get('etag');
-      if (!etag) throw new Error('Object storage did not expose the ETag response header');
+      // Some S3-compatible providers accept the upload but do not expose ETag
+      // through CORS. The backend reconciles the provider's authoritative ETag
+      // during completion, so an empty value is safe and keeps browser uploads
+      // compatible with those providers.
+      const etag = response.headers.get('etag') || '';
       await api.post(`/files/uploads/${uploadId}/parts/record/`, {
         part_number: part.partNumber,
         size: part.size,
@@ -344,7 +348,7 @@ export async function uploadFile(
     }
 
     if (!session) {
-      const clientUploadId = persisted?.clientUploadId || crypto.randomUUID();
+      const clientUploadId = persisted?.clientUploadId || createClientId();
       const response = await api.post<UploadSessionResponse>('/files/uploads/', {
         client_upload_id: clientUploadId,
         purpose,

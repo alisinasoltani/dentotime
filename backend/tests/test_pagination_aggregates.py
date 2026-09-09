@@ -73,11 +73,19 @@ def test_doctor_preview_projects_at_most_four_public_rows():
     assert len(response.data) == 4
     assert set(response.data[0]) == {
         "id",
+        "slug",
         "first_name",
         "last_name",
         "display_name",
         "clinic_name",
         "profile_picture",
+        "specialty",
+        "bio",
+        "experience",
+        "address",
+        "map_url",
+        "services",
+        "insurances",
         "likes_count",
         "average_rating",
         "vote_count",
@@ -136,7 +144,9 @@ def test_dashboard_summary_uses_exact_aggregate_counts(
     assert response.status_code == 200
     assert response.data == {
         "users": NormalUser.objects.count(),
-        "doctors_approved": 1,
+        "doctors_approved": Doctor.objects.filter(
+            verification_status=Doctor.VerificationStatus.APPROVED,
+        ).count(),
         "doctors_pending": 1,
         "unread_messages": 1,
         "recent_verifications": 2,

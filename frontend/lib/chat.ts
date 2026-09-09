@@ -1,7 +1,10 @@
 import api from "./api";
 import type {
+  ChatContactDirectory,
   ChatMessage,
   ChatThread,
+  AdminConversationHistoryDetail,
+  AdminConversationHistoryThread,
   MessageCursorPage,
   MessageDeltaPage,
   PaginatedResponse,
@@ -77,6 +80,55 @@ export const deleteThreadApi = async (threadId: string): Promise<void> => {
 export async function getOrCreateThread(): Promise<ChatThread> {
   const response = await api.post<ChatThread>(
     "/chat/threads/get_or_create/",
+  );
+  return response.data;
+}
+
+export async function getChatContacts(
+  search = "",
+  role: "ALL" | "USER" | "DOCTOR" = "ALL",
+): Promise<ChatContactDirectory> {
+  const response = await api.get<ChatContactDirectory>("/chat/contacts/", {
+    params: { search, role },
+  });
+  return response.data;
+}
+
+export async function pinChatContact(contactId: string | number): Promise<void> {
+  await api.post("/chat/contacts/pins/", { contact_id: contactId });
+}
+
+export async function unpinChatContact(contactId: string | number): Promise<void> {
+  await api.delete(`/chat/contacts/${contactId}/pin/`);
+}
+
+export async function createDirectThread(
+  contactId: string | number,
+): Promise<ChatThread> {
+  const response = await api.post<ChatThread>("/chat/threads/direct/", {
+    contact_id: contactId,
+  });
+  return response.data;
+}
+
+export type AdminConversationHistoryPage = PaginatedResponse<AdminConversationHistoryThread>;
+
+export async function getAdminConversationHistory(
+  search = "",
+  pageUrl?: string,
+): Promise<AdminConversationHistoryPage> {
+  const response = await api.get<AdminConversationHistoryPage>(
+    pageUrl || "/admin/chat/history/",
+    { params: pageUrl ? undefined : { search } },
+  );
+  return response.data;
+}
+
+export async function getAdminConversationHistoryDetail(
+  threadId: string,
+): Promise<AdminConversationHistoryDetail> {
+  const response = await api.get<AdminConversationHistoryDetail>(
+    `/admin/chat/history/${threadId}/`,
   );
   return response.data;
 }

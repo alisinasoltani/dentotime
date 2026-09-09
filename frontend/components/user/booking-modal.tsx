@@ -7,6 +7,11 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "@/lib/zod";
 import { toast } from "sonner";
+import useSWR from "swr";
+import { getMatchingDoctors, getPublicCatalog } from "@/lib/public-doctors";
+import { Field, FieldLabel, FieldError, FieldGroup } from "@/components/ui/field";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import {
     addMonths, subMonths, format as jFormat, startOfMonth, endOfMonth,
     eachDayOfInterval, getDay, isSameDay, isBefore, startOfDay,
@@ -15,12 +20,14 @@ import {
 import { format as gFormat } from "date-fns";
 import { ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import api from "@/lib/api";
-import { restoreSession } from "@/lib/auth";
+import { createClientId, restoreSession } from "@/lib/auth";
 import { showBookingSuccess } from "@/components/booking-success-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const bookingSchema = z.object({
+    insurance: z.string().min(1, "لطفا بیمه را انتخاب کنید"),
     service: z.string().min(1, "لطفا یک سرویس را انتخاب کنید"),
+    doctorId: z.string().min(1, "لطفا پزشک را انتخاب کنید"),
     fullName: z.string().min(3, "نام کامل باید حداقل ۳ حرف باشد"),
     phone: z.string().regex(/^09\d{9}$/, "شماره موبایل معتبر نیست (مثال: 09123456789)"),
     date: z.string().min(1, "لطفا یک روز را از تقویم انتخاب کنید"),
@@ -30,13 +37,19 @@ const bookingSchema = z.object({
 
 type BookingFormValues = z.infer<typeof bookingSchema>;
 
-const SERVICES = [
-    "ایمپلنت دندان",
-    "طراحی لبخند دیجیتال",
-    "پروتزهای ثابت و متحرک",
-    "ترمیم و زیبایی",
-    "بلیچینگ",
-];
+function BookingSelect({ id, label, value, placeholder, disabled, error, onValueChange, options }: {
+    id: string; label: string; value: string; placeholder: string; disabled: boolean; error?: string;
+    onValueChange: (value: string) => void; options: { value: string; label: string }[];
+}) {
+    return <Field data-disabled={disabled} data-invalid={!!error}>
+        <FieldLabel htmlFor={id}>{label}</FieldLabel>
+        <Select dir="rtl" value={value ?? ""} onValueChange={onValueChange} disabled={disabled}>
+            <SelectTrigger id={id} className="h-12 w-full min-w-0" aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined}><SelectValue placeholder={placeholder} /></SelectTrigger>
+            <SelectContent position="popper"><SelectGroup>{options.map(item => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup></SelectContent>
+        </Select>
+        {error && <FieldError id={`${id}-error`}>{error}</FieldError>}
+    </Field>;
+}
 
 const WEEK_DAYS = ['شنبه', 'یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنج‌شنبه', 'جمعه'];
 
@@ -44,6 +57,8 @@ interface BookingModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSuccess: () => void;
+    initialServiceSlug?: string;
+    initialInsurance?: string;
 }
 
 interface AppointmentSlot {
@@ -64,7 +79,13 @@ interface CaptchaChallenge {
     expires_in: number;
 }
 
-export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModalProps) {
+export default function BookingModal({
+    isOpen,
+    onClose,
+    onSuccess,
+    initialServiceSlug,
+    initialInsurance,
+}: BookingModalProps) {
     const today = startOfDay(new Date());
     const [currentMonth, setCurrentMonth] = useState(today);
     const [selectedDateObj, setSelectedDateObj] = useState<Date | null>(null);
@@ -78,13 +99,35 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
     const [authResolved, setAuthResolved] = useState(false);
     const [captcha, setCaptcha] = useState<CaptchaChallenge | null>(null);
     const [isLoadingCaptcha, setIsLoadingCaptcha] = useState(false);
+    const { data: catalog, error: catalogError, mutate: reloadCatalog } = useSWR(isOpen ? "booking-catalog" : null, getPublicCatalog);
+    const services = catalog?.services;
 
     const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<BookingFormValues>({
         resolver: zodResolver(bookingSchema),
-        defaultValues: { service: SERVICES[0] }
+        defaultValues: { insurance: initialInsurance ?? "", service: initialServiceSlug ?? "", doctorId: "" }
     });
 
     const watchDate = watch("date");
+    const watchService = watch("service");
+    const watchDoctor = watch("doctorId");
+    const watchInsurance = watch("insurance");
+    const selectedInsurance = catalog?.insurances.find(item => item.name === watchInsurance);
+    const selectedService = services?.find(item => item.slug === watchService);
+    const { data: matchedDoctors, isLoading: isLoadingDoctors, error: doctorsError, mutate: reloadDoctors } = useSWR(
+        isOpen && selectedInsurance && selectedService ? ["booking-doctors", selectedInsurance.id, selectedService.id] : null,
+        ([, insuranceId, serviceId]) => getMatchingDoctors(insuranceId, serviceId),
+    );
+    const eligibleDoctors = matchedDoctors ?? [];
+
+    const clearAppointment = () => {
+        setAvailableSlots([]);
+        setSelectedDateObj(null);
+        setSelectedSlotId(null);
+        setValue("date", "");
+        setValue("time", "");
+        idempotencyKeyRef.current = null;
+    };
+    const clearDoctor = () => { setValue("doctorId", ""); clearAppointment(); };
 
     const loadCaptcha = useCallback(async () => {
         setIsLoadingCaptcha(true);
@@ -109,7 +152,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                     const hasSession = await restoreSession();
                     setIsAuthenticated(hasSession);
                     if (!hasSession) {
-                        reset({ fullName: "", phone: "", service: SERVICES[0], date: "", time: "", captchaAnswer: "" });
+                        reset({ fullName: "", phone: "", insurance: initialInsurance ?? "", service: initialServiceSlug ?? "", doctorId: "", date: "", time: "", captchaAnswer: "" });
                         await loadCaptcha();
                         return;
                     }
@@ -127,7 +170,9 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                     reset({
                         fullName: `${user.first_name || ""} ${user.last_name || ""}`.trim(),
                         phone: rawPhone,
-                        service: SERVICES[0],
+                        insurance: initialInsurance ?? "",
+                        service: initialServiceSlug ?? "",
+                        doctorId: "",
                         date: "",
                         time: "",
                         captchaAnswer: "",
@@ -142,12 +187,23 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
             };
             void fetchUserData();
         }
-    }, [isOpen, loadCaptcha, reset]);
+    }, [initialInsurance, initialServiceSlug, isOpen, loadCaptcha, reset]);
 
     // دریافت اسلات‌های ماه جاری
     useEffect(() => {
-        if (!isOpen) return;
+        if (!isOpen || !watchDoctor) {
+            const timer = window.setTimeout(() => {
+                setAvailableSlots([]);
+                setSelectedSlotId(null);
+                setSelectedDateObj(null);
+                setValue("date", "");
+                setValue("time", "");
+                setIsLoadingSlots(false);
+            }, 0);
+            return () => window.clearTimeout(timer);
+        }
 
+        const controller = new AbortController();
         const fetchSlots = async () => {
             setIsLoadingSlots(true);
             try {
@@ -155,10 +211,10 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                 const end = gFormat(endOfMonth(currentMonth), 'yyyy-MM-dd');
 
                 let allSlots: AppointmentSlot[] = [];
-                let url: string | null = `/appointments/slots/?start_date=${start}&end_date=${end}&_t=${Date.now()}`;
+                let url: string | null = `/appointments/slots/?start_date=${start}&end_date=${end}&doctor_id=${encodeURIComponent(watchDoctor)}&_t=${Date.now()}`;
 
                 while (url) {
-                    const res: AxiosResponse<AppointmentSlot[] | PaginatedSlots> = await api.get<AppointmentSlot[] | PaginatedSlots>(url);
+                    const res: AxiosResponse<AppointmentSlot[] | PaginatedSlots> = await api.get<AppointmentSlot[] | PaginatedSlots>(url, { signal: controller.signal });
                     const data: AppointmentSlot[] | PaginatedSlots = res.data;
 
                     if (Array.isArray(data)) {
@@ -178,15 +234,16 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                         }
                     }
                 }
-                setAvailableSlots(allSlots);
-            } catch (err) {
-                console.error("Failed to fetch slots", err);
+                if (!controller.signal.aborted) setAvailableSlots(allSlots);
+            } catch {
+                if (!controller.signal.aborted) { setAvailableSlots([]); toast.error("دریافت زمان‌های مراجعه ناموفق بود."); }
             } finally {
-                setIsLoadingSlots(false);
+                if (!controller.signal.aborted) setIsLoadingSlots(false);
             }
         };
-        fetchSlots();
-    }, [currentMonth, isOpen]);
+        void fetchSlots();
+        return () => controller.abort();
+    }, [currentMonth, isOpen, watchDoctor, setValue]);
 
     const slotsByDate = useMemo(() => {
         const map: Record<string, AppointmentSlot[]> = {};
@@ -205,6 +262,10 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
     }, [selectedDateObj, slotsByDate]);
 
     const onSubmit = async (data: BookingFormValues) => {
+        if (!selectedInsurance || !selectedService || !eligibleDoctors.some(doctor => String(doctor.id) === data.doctorId)) {
+            toast.error("بیمه، خدمت و پزشک را دوباره انتخاب کنید.");
+            return;
+        }
         if (!selectedSlotId) {
             toast.error("لطفا یک ساعت معتبر را انتخاب کنید.");
             return;
@@ -216,13 +277,16 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
 
         setIsSubmitting(true);
         try {
-            idempotencyKeyRef.current ??= crypto.randomUUID();
+            idempotencyKeyRef.current ??= createClientId();
             const [firstName, ...lastNameParts] = data.fullName.trim().split(/\s+/);
             await api.post(
                 '/appointments/',
                 {
                     slot_id: selectedSlotId,
-                    reason: data.service,
+                    doctor_id: Number(data.doctorId),
+                    insurance_id: selectedInsurance.id,
+                    service_id: selectedService.id,
+                    reason: selectedService.title,
                     ...(!isAuthenticated && captcha ? {
                         phone_number: data.phone.startsWith("0") ? `+98${data.phone.slice(1)}` : data.phone,
                         first_name: firstName,
@@ -236,7 +300,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
 
             showBookingSuccess(isAuthenticated);
 
-            reset({ fullName: data.fullName, phone: data.phone, service: SERVICES[0], date: "", time: "", captchaAnswer: "" });
+            reset({ fullName: data.fullName, phone: data.phone, insurance: data.insurance, service: initialServiceSlug ?? "", doctorId: "", date: "", time: "", captchaAnswer: "" });
             setSelectedDateObj(null);
             setSelectedSlotId(null);
             idempotencyKeyRef.current = null;
@@ -258,8 +322,8 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
     const canGoNext = monthDiff < 1;
     const canGoPrev = monthDiff > -1;
 
-    const nextMonth = () => canGoNext && setCurrentMonth(addMonths(currentMonth, 1));
-    const prevMonth = () => canGoPrev && setCurrentMonth(subMonths(currentMonth, 1));
+    const nextMonth = () => { if (canGoNext) { clearAppointment(); setCurrentMonth(addMonths(currentMonth, 1)); } };
+    const prevMonth = () => { if (canGoPrev) { clearAppointment(); setCurrentMonth(subMonths(currentMonth, 1)); } };
 
     const daysInMonth = useMemo(() => {
         const start = startOfMonth(currentMonth);
@@ -272,6 +336,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
 
     const handleDateClick = (date: Date, isSelectable: boolean) => {
         if (!isSelectable) return;
+        idempotencyKeyRef.current = null;
         const dateStr = jFormat(date, 'yyyy-MM-dd');
         setSelectedDateObj(date);
         setSelectedSlotId(null);
@@ -280,6 +345,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
     };
 
     const handleTimeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        idempotencyKeyRef.current = null;
         const slotId = Number(e.target.value);
         setSelectedSlotId(slotId);
         const slot = availableHoursForSelectedDate.find(s => s.id === slotId);
@@ -349,6 +415,7 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                                     return (
                                         <div key={dateStr} className="relative group flex justify-center">
                                             <button
+                                                data-testid="booking-calendar-day"
                                                 type="button"
                                                 onClick={() => handleDateClick(date, isSelectable)}
                                                 disabled={!isSelectable}
@@ -365,20 +432,21 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                         {/* ================= فرم ثبت نام ================= */}
                         {/* اختصاص 3 ستون از 5 ستون به فرم (معادل 60%) */}
                         <div className="w-full lg:col-span-3">
-                            <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-                                <div className="flex flex-col gap-2">
-                                    <label className="text-sm font-bold text-slate-700">سرویس:</label>
-                                    <div className="relative">
-                                        <select
-                                            {...register("service")}
-                                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 outline-none focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3] transition-all appearance-none"
-                                        >
-                                            {SERVICES.map(srv => <option key={srv} value={srv}>{srv}</option>)}
-                                        </select>
-                                        <ChevronLeft className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none -rotate-90" />
-                                    </div>
-                                    {errors.service && <span className="text-xs text-red-500">{errors.service.message}</span>}
-                                </div>
+                            <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
+                                <FieldGroup>
+                                    <BookingSelect id="booking-insurance" label="۱. بیمه" value={watchInsurance} placeholder="بیمه خود را انتخاب کنید" disabled={!catalog || !authResolved || isSubmitting} error={errors.insurance?.message}
+                                        onValueChange={value => { setValue("insurance", value, { shouldValidate: true }); clearDoctor(); }}
+                                        options={catalog?.insurances.map(item => ({ value: item.name, label: item.name })) ?? []} />
+                                    <BookingSelect id="booking-service" label="۲. خدمت" value={watchService} placeholder={selectedInsurance ? "خدمت مورد نظر را انتخاب کنید" : "ابتدا بیمه را انتخاب کنید"} disabled={!selectedInsurance || !authResolved || isSubmitting} error={errors.service?.message}
+                                        onValueChange={value => { setValue("service", value, { shouldValidate: true }); clearDoctor(); }}
+                                        options={services?.map(item => ({ value: item.slug, label: item.title })) ?? []} />
+                                    <BookingSelect id="booking-doctor" label="۳. پزشک" value={watchDoctor} placeholder={isLoadingDoctors ? "در حال دریافت پزشکان…" : "پزشک مورد نظر را انتخاب کنید"} disabled={!selectedInsurance || !selectedService || isLoadingDoctors || !!doctorsError || isSubmitting} error={errors.doctorId?.message}
+                                        onValueChange={value => { clearAppointment(); setValue("doctorId", value, { shouldValidate: true }); }}
+                                        options={eligibleDoctors.map(doctor => ({ value: String(doctor.id), label: doctor.display_name }))} />
+                                </FieldGroup>
+                                {catalogError ? <FieldError>دریافت فهرست بیمه و خدمات ناموفق بود. <Button type="button" variant="outline" onClick={() => void reloadCatalog()}>تلاش دوباره</Button></FieldError> : null}
+                                {doctorsError ? <FieldError>دریافت پزشکان ناموفق بود. <Button type="button" variant="outline" onClick={() => void reloadDoctors()}>تلاش دوباره</Button></FieldError> : null}
+                                {selectedInsurance && selectedService && !isLoadingDoctors && !doctorsError && matchedDoctors?.length === 0 ? <p role="status" className="text-sm text-muted-foreground">پزشکی با این بیمه و خدمت یافت نشد. بیمه یا خدمت دیگری انتخاب کنید.</p> : null}
 
                                 <div className="flex flex-col gap-2">
                                     <label className="text-sm font-bold text-slate-700">نام و نام خانوادگی:</label>
@@ -411,13 +479,15 @@ export default function BookingModal({ isOpen, onClose, onSuccess }: BookingModa
                                     </div>
 
                                     <div className="flex-1 flex flex-col gap-2">
-                                        <label className="text-sm font-bold text-slate-700">ساعت مراجعه:</label>
+                                        <label htmlFor="booking-time" className="text-sm font-bold text-slate-700">ساعت مراجعه:</label>
                                         <div className="relative">
                                             <select
+                                                id="booking-time"
                                                 value={selectedSlotId || ""}
                                                 onChange={handleTimeChange}
                                                 disabled={!watchDate || isLoadingSlots || availableHoursForSelectedDate.length === 0}
-                                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 outline-none focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3] transition-all appearance-none disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed"
+                                                dir="rtl"
+                                                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 text-right outline-none focus:border-[#2993A3] focus:ring-1 focus:ring-[#2993A3] transition-all appearance-none disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-100 disabled:cursor-not-allowed"
                                             >
                                                 <option value="">{isLoadingSlots ? 'در حال بررسی...' : 'ساعت'}</option>
                                                 {availableHoursForSelectedDate.map(slot => (

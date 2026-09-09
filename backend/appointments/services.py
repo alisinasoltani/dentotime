@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from accounts.models import User
+from accounts.models import Doctor, User
 from core.sms_service import (
     queue_admin_alert,
     queue_appt_approved,
@@ -45,6 +45,10 @@ class IdempotencyConflict(BookingConflict):
     pass
 
 
+class InvalidBookingSelection(Exception):
+    pass
+
+
 class InvalidTransition(Exception):
     pass
 
@@ -78,16 +82,22 @@ def _matching_idempotent_booking(
     existing,
     *,
     patient,
+    doctor,
     slot_id,
     reason,
+    service,
+    insurance,
     contact_phone_number,
     contact_first_name,
     contact_last_name,
 ):
     if (
         existing.patient_id != getattr(patient, "pk", None)
+        or existing.doctor_id != getattr(doctor, "pk", None)
         or existing.slot_id != slot_id
         or existing.reason != reason
+        or existing.service_id != getattr(service, "pk", None)
+        or existing.insurance_id != getattr(insurance, "pk", None)
         or existing.contact_phone_number != contact_phone_number
         or existing.contact_first_name != contact_first_name
         or existing.contact_last_name != contact_last_name
@@ -107,9 +117,12 @@ def _queue_booking_notifications(admin_phones, contact_phone_number):
 def book_appointment(
     *,
     patient,
+    doctor=None,
     slot_id: int,
     reason: str,
     idempotency_key,
+    service=None,
+    insurance=None,
     contact_phone_number: str | None = None,
     contact_first_name: str | None = None,
     contact_last_name: str | None = None,
@@ -130,8 +143,11 @@ def book_appointment(
         return _matching_idempotent_booking(
             existing,
             patient=patient,
+            doctor=doctor,
             slot_id=slot_id,
             reason=reason,
+            service=service,
+            insurance=insurance,
             contact_phone_number=contact_phone_number,
             contact_first_name=contact_first_name,
             contact_last_name=contact_last_name,
@@ -139,6 +155,9 @@ def book_appointment(
 
     try:
         with transaction.atomic():
+            # Availability generation/removal locks doctor before slots too.
+            if doctor is not None:
+                doctor = Doctor.objects.select_for_update().get(pk=doctor.pk)
             slot = AppointmentSlot.objects.select_for_update().get(pk=slot_id)
             existing = Appointment.objects.select_related("slot").filter(
                 idempotency_key=idempotency_key
@@ -147,20 +166,39 @@ def book_appointment(
                 return _matching_idempotent_booking(
                     existing,
                     patient=patient,
+                    doctor=doctor,
                     slot_id=slot_id,
                     reason=reason,
+                    service=service,
+                    insurance=insurance,
                     contact_phone_number=contact_phone_number,
                     contact_first_name=contact_first_name,
                     contact_last_name=contact_last_name,
                 )
             if slot.status != AppointmentSlot.Status.AVAILABLE:
                 raise SlotUnavailable("This slot is no longer available.")
+            if slot.doctor_id and getattr(doctor, "pk", None) != slot.doctor_id:
+                raise SlotUnavailable("This slot belongs to another doctor.")
+
+            if doctor is not None:
+                if (
+                    service is None or insurance is None
+                    or not doctor.is_active or not doctor.is_verified
+                    or not doctor.services.filter(pk=service.pk, is_active=True).exists()
+                    or not doctor.insurances.filter(pk=insurance.pk, is_active=True).exists()
+                ):
+                    raise InvalidBookingSelection("پزشک باید خدمت و بیمه انتخاب‌شده را پشتیبانی کند. لطفاً انتخاب‌ها را بررسی کنید.")
+            elif service is not None or insurance is not None:
+                raise InvalidBookingSelection("لطفاً پزشک ارائه‌دهنده خدمت و پذیرنده بیمه را انتخاب کنید.")
 
             appointment = Appointment.objects.create(
                 patient=patient,
+                doctor=doctor,
                 slot=slot,
                 status=Appointment.Status.PENDING,
                 reason=reason,
+                service=service,
+                insurance=insurance,
                 idempotency_key=idempotency_key,
                 contact_phone_number=contact_phone_number,
                 contact_first_name=contact_first_name,
@@ -185,8 +223,11 @@ def book_appointment(
             return _matching_idempotent_booking(
                 existing,
                 patient=patient,
+                doctor=doctor,
                 slot_id=slot_id,
                 reason=reason,
+                service=service,
+                insurance=insurance,
                 contact_phone_number=contact_phone_number,
                 contact_first_name=contact_first_name,
                 contact_last_name=contact_last_name,

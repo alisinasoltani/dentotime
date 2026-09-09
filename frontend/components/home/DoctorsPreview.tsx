@@ -1,48 +1,148 @@
+"use client";
+
+import Image from "next/image";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { Heart, Star, Stethoscope } from "lucide-react";
+import { ArrowLeft, ArrowRight, ShieldCheck, Star } from "lucide-react";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getServerDoctorPreview } from "@/lib/server-public-doctors";
+import type { InsuranceProvider, PublicDoctor } from "@/lib/types";
 
+export default function DoctorsPreview({
+  doctors,
+  insurances,
+}: {
+  doctors: PublicDoctor[];
+  insurances: InsuranceProvider[];
+}) {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const loopedDentists = [...doctors, ...doctors, ...doctors];
+  const insuranceNames = insurances.map((item) => item.name).filter((item) => item !== "آزاد");
+  const marqueeInsurers = [...insuranceNames, ...insuranceNames];
 
-export default async function DoctorsPreview() {
-  const doctors = await getServerDoctorPreview();
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    viewport.scrollLeft = viewport.scrollWidth / 3;
+  }, []);
+
+  const move = (direction: "left" | "right") => {
+    viewportRef.current?.scrollBy({
+      left: direction === "left" ? -300 : 300,
+      behavior: "smooth",
+    });
+  };
+
+  const keepInfinite = () => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const segment = viewport.scrollWidth / 3;
+    if (viewport.scrollLeft < segment * 0.35) viewport.scrollLeft += segment;
+    if (viewport.scrollLeft > segment * 1.65) viewport.scrollLeft -= segment;
+  };
+
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:px-8" dir="rtl">
-      <div className="mb-10 flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">پزشکان ما</h2>
-        <Link href="/doctors" className="text-sm font-bold text-[#2993A3] hover:text-[#1f7b89]">
-          مشاهده همه
-        </Link>
-      </div>
-      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {doctors.map((doctor) => (
-          <Link
-            href={`/doctors/${doctor.id}`}
-            key={doctor.id}
-            className="doctor-list-item flex flex-col items-center rounded-2xl border border-gray-100 bg-white p-6 text-center shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
-          >
-            <Avatar className="mb-4 h-20 w-20 border-2 border-[#5FB4FF]">
-              <AvatarImage src={doctor.profile_picture || undefined} />
-              <AvatarFallback className="bg-[#E9F5F9] text-[#2993A3]">
-                <Stethoscope className="h-8 w-8" />
-              </AvatarFallback>
-            </Avatar>
-            <h3 className="mb-1 font-bold text-slate-800">
-              دکتر {doctor.first_name} {doctor.last_name}
-            </h3>
-            <p className="mb-3 text-xs text-gray-500">{doctor.clinic_name || "مطب خصوصی"}</p>
-            <div className="flex items-center gap-1 text-sm font-bold text-[#2993A3]">
-              <Heart className="h-4 w-4" fill="currentColor" />
-              {doctor.likes_count || 0} لایک
+    <>
+      <section className="pb-16 sm:pb-20 lg:pb-28" dir="rtl" aria-labelledby="doctors-title">
+        <div className="mx-auto w-full px-4 sm:px-6">
+          <div className="mb-8 flex flex-col md:flex-row items-start md:items-end justify-between gap-0 md:gap-4 px-2 md:px-8">
+            <div>
+              <h2 id="doctors-title" className="text-[28px] font-black text-[#111] sm:text-[36px]">دندان‌پزشکان برتر</h2>
+              <p className="mt-3 max-w-[620px] text-[15px] leading-7 text-[#666] sm:text-base">
+                امتیاز هر پزشک از میانگین تمام نظرهای ثبت‌شده محاسبه می‌شود.
+              </p>
             </div>
-            <div className="mt-1 flex items-center gap-1 text-xs font-semibold text-yellow-600">
-              <Star className="h-3.5 w-3.5" fill="currentColor" />
-              {doctor.average_rating.toFixed(1)} ({doctor.vote_count} رأی)
+            <Link href="/doctors" className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-bold text-[#2993A3] hover:underline">
+              مشاهده همه
+              <ArrowLeft className="size-4" aria-hidden="true" />
+            </Link>
+          </div>
+
+          <div className="relative">
+            <button type="button" onClick={() => move("right")} className="absolute right-1 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-[#9BD8E4] bg-white text-[#2993A3] shadow-[0_8px_24px_rgba(54,150,165,0.18)]" aria-label="پزشک بعدی">
+              <ArrowRight className="size-5" />
+            </button>
+            <div
+              ref={viewportRef}
+              onScroll={keepInfinite}
+              className="dento-scrollbar-hidden flex snap-x snap-mandatory gap-4 overflow-x-auto px-2 pb-12 pt-3"
+              style={{ direction: "ltr" }}
+            >
+              {loopedDentists.map((dentist, index) => {
+                const hasRatings = dentist.vote_count > 0;
+                const roundedRating = dentist.average_rating.toFixed(1);
+                return (
+                <Link
+                  key={`${dentist.id}-${index}`}
+                  href={`/doctors/${dentist.slug || dentist.id}`}
+                  dir="rtl"
+                  className="group w-[76vw] max-w-[270px] shrink-0 snap-start overflow-hidden rounded-[22px] border border-[#D4E8EB] bg-white p-3 transition duration-300 hover:-translate-y-1 hover:border-[#75C1C7] hover:shadow-[0_18px_42px_rgba(50,139,154,0.14)] focus-visible:outline-3 focus-visible:outline-[#75C1C7]/50"
+                >
+                  <Image src={dentist.profile_picture || "/images/logo.png"} alt={`دکتر ${dentist.first_name} ${dentist.last_name}`} width={480} height={360} sizes="270px" className="aspect-[4/3] w-full rounded-[16px] bg-[#EFF9FB] object-cover object-top" />
+                  <div className="px-2 pb-2 pt-4">
+                    <h3 className="text-base font-extrabold text-[#222]">دکتر {dentist.first_name} {dentist.last_name}</h3>
+                    <p className="mt-1 truncate text-xs text-[#666]">{dentist.specialty}</p>
+                    <div
+                      className="mt-4 flex items-center gap-1"
+                      aria-label={hasRatings
+                        ? `امتیاز ${roundedRating} از ۵ از مجموع ${dentist.vote_count} نظر`
+                        : "هنوز امتیازی ثبت نشده است"}
+                    >
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <Star
+                          key={star}
+                          className={hasRatings && star <= Math.round(dentist.average_rating)
+                            ? "size-3.5 fill-[#F7B731] text-[#F7B731]"
+                            : "size-3.5 text-[#D5DEE0]"}
+                          aria-hidden="true"
+                        />
+                      ))}
+                      {hasRatings ? (
+                        <>
+                          <span className="mr-1 text-[11px] font-bold text-[#555]">{roundedRating}</span>
+                          <span className="text-[11px] text-[#888]">({dentist.vote_count} نظر)</span>
+                        </>
+                      ) : (
+                        <span className="mr-1 text-[11px] font-bold text-[#777]">بدون امتیاز</span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+                );
+              })}
             </div>
-          </Link>
-        ))}
-      </div>
-    </section>
+            <button type="button" onClick={() => move("left")} className="absolute left-1 top-1/2 z-10 flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-[#9BD8E4] bg-white text-[#2993A3] shadow-[0_8px_24px_rgba(54,150,165,0.18)]" aria-label="پزشک قبلی">
+              <ArrowLeft className="size-5" />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="overflow-hidden bg-[#fff]
+      bg-[linear-gradient(to_right,#ffffff_0%,#ffffff_25%,#9ce3e3_50%,#ffffff_75%,#ffffff_100%)] p-[1px] rounded-xl" dir="rtl" aria-labelledby="insurance-title">
+        <div className="w-full h-full bg-white py-10 sm:py-12">
+          <div className="mx-auto max-w-[1180px] px-4">
+            <div className="mb-7 flex flex-col md:flex-row items-center gap-3">
+              <div className="flex flex-col md:flex-col">
+                <h2 id="insurance-title" className="text-2xl font-black text-[#111]">بیمه‌های تحت پوشش</h2>
+                <p className="mt-1 text-sm text-[#777]">پوشش دقیق هر خدمت در مرحله رزرو بررسی می‌شود.</p>
+              </div>
+              <a href="#booking" className="mr-none md:mr-auto inline-flex min-h-11 justify-self-start items-center gap-2 text-sm font-bold text-[#2993A3] hover:underline">
+                مشاهده همه
+                <ArrowLeft className="size-4" aria-hidden="true" />
+              </a>
+            </div>
+          </div>
+          <div className="dento-marquee-mask overflow-hidden" aria-label="فهرست بیمه‌های تحت پوشش">
+            <div className="dento-insurance-marquee flex w-max items-center gap-3 px-3" role="list">
+              {marqueeInsurers.map((insurer, index) => (
+                <div key={`${insurer}-${index}`} role="listitem" className="flex h-16 min-w-[190px] items-center justify-center rounded-sm border border-[#D6ECEF] bg-white px-6 text-center text-sm font-extrabold text-[#396A72] shadow-[0_8px_24px_rgba(54,150,165,0.07)]">
+                  {insurer}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    </>
   );
 }

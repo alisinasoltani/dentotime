@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.7
 FROM python:3.12-slim-bookworm AS runtime
 
+ARG PIP_INDEX_URL=https://mirror-pypi.runflare.com/simple
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -14,6 +16,7 @@ RUN groupadd --system --gid 10001 dentotime \
 WORKDIR /app
 COPY requirements/production.lock /tmp/production.lock
 RUN python -m pip install \
+    --index-url "${PIP_INDEX_URL}" \
     --require-hashes \
     --no-deps \
     --timeout 300 \
@@ -27,4 +30,4 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/api/v1/health/', headers={'X-Forwarded-Proto':'https'}); urllib.request.urlopen(r, timeout=3)"
 
-CMD ["sh", "-c", "test -n \"$UVICORN_FORWARDED_ALLOW_IPS\" || { echo 'UVICORN_FORWARDED_ALLOW_IPS is required' >&2; exit 1; }; exec python -m uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --workers 4 --proxy-headers --forwarded-allow-ips \"$UVICORN_FORWARDED_ALLOW_IPS\""]
+CMD ["sh", "-c", "test -n \"$UVICORN_FORWARDED_ALLOW_IPS\" || { echo 'UVICORN_FORWARDED_ALLOW_IPS is required' >&2; exit 1; }; workers=\"${UVICORN_WORKERS:-1}\"; case \"$workers\" in ''|*[!0-9]*) echo 'UVICORN_WORKERS must be a positive integer' >&2; exit 1;; esac; test \"$workers\" -ge 1 || { echo 'UVICORN_WORKERS must be a positive integer' >&2; exit 1; }; exec python -m uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --workers \"$workers\" --proxy-headers --forwarded-allow-ips \"$UVICORN_FORWARDED_ALLOW_IPS\""]

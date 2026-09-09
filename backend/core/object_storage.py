@@ -40,6 +40,16 @@ def get_s3_client():
     return _build_client(*_client_settings_key())
 
 
+def get_s3_presign_client():
+    return _build_client(
+        settings.AWS_ACCESS_KEY_ID,
+        settings.AWS_SECRET_ACCESS_KEY,
+        settings.AWS_S3_PUBLIC_ENDPOINT_URL,
+        settings.AWS_S3_REGION_NAME,
+        settings.AWS_S3_ADDRESSING_STYLE,
+    )
+
+
 def require_bucket_name():
     bucket = settings.AWS_STORAGE_BUCKET_NAME.strip()
     if not bucket:
@@ -73,7 +83,7 @@ def checksum_header(hex_digest):
 
 
 def presign_upload_part(session, part_number, checksum_sha256):
-    return get_s3_client().generate_presigned_url(
+    return get_s3_presign_client().generate_presigned_url(
         "upload_part",
         Params={
             "Bucket": require_bucket_name(),
@@ -161,7 +171,7 @@ def _safe_content_disposition(file_name):
 
 
 def presign_asset_download(asset):
-    return get_s3_client().generate_presigned_url(
+    return get_s3_presign_client().generate_presigned_url(
         "get_object",
         Params={
             "Bucket": require_bucket_name(),

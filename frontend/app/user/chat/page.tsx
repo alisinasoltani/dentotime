@@ -14,11 +14,11 @@ export default function UserChatPage() {
   };
 
   return (
-    <div className="h-[calc(100vh-4rem)] md:h-[calc(100vh-4rem)] mt-14 md:mt-0 flex bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-      <div className={`${showChatMobile ? "hidden" : "flex"} md:flex w-full md:w-auto`}>
+    <div className="mt-14 flex h-[calc(100vh-4rem)] min-h-0 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm md:mt-0">
+      <div className={`${showChatMobile ? "hidden" : "flex"} min-h-0 min-w-0 w-full shrink-0 md:flex md:w-80`}>
         <UserChatList onSelectThread={handleSelectThread} activeThreadId={activeThread?.id || null} onBack={() => setShowChatMobile(false)} />
       </div>
-      <div className={`${showChatMobile ? "flex" : "hidden"} md:flex flex-1`}>
+      <div className={`${showChatMobile ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 md:flex`}>
         <UserChatWindow thread={activeThread} onBack={() => setShowChatMobile(false)} />
       </div>
     </div>

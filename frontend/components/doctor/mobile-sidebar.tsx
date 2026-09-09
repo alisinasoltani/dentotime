@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
 import { SidebarContent } from './doctor-sidebar';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,9 @@ export function MobileSidebar() {
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="w-72 p-0">
-        <SidebarContent />
+        <SheetTitle className="sr-only">منوی پنل پزشک</SheetTitle>
+        <SheetDescription className="sr-only">دسترسی به بخش‌های پنل پزشک</SheetDescription>
+        <SidebarContent onNavigate={() => setOpen(false)} />
       </SheetContent>
     </Sheet>
   );

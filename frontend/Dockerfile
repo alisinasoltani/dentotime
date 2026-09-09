@@ -2,16 +2,23 @@
 FROM node:22-alpine AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# The production CSS toolchain uses platform-specific optional native modules
+# (lightningcss and Tailwind oxide).  Some npm configurations omit optional
+# packages during `npm ci`, which leaves Alpine builds without their musl
+# binaries and makes `next build` fail.
+RUN npm ci --include=optional
 
 FROM node:22-alpine AS builder
 WORKDIR /app
 ARG BACKEND_INTERNAL_URL
 ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_STORAGE_ORIGIN
 ARG ALLOW_INSECURE_HTTP=false
 ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL \
     NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL \
+    NEXT_PUBLIC_STORAGE_ORIGIN=$NEXT_PUBLIC_STORAGE_ORIGIN \
     ALLOW_INSECURE_HTTP=$ALLOW_INSECURE_HTTP \
+    NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .

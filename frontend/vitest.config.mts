@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     fileParallelism: false,
-    include: ["tests/unit/**/*.test.tsx"],
+    include: ["tests/unit/**/*.test.{ts,tsx}"],
     maxWorkers: 1,
     pool: "threads",
   },

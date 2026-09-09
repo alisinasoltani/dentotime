@@ -251,6 +251,7 @@ def test_wrong_captcha_counts_attempts_and_expired_captcha_fails():
 @pytest.mark.django_db
 def test_guest_booking_rate_limit_applies_before_booking(settings):
     settings.GUEST_BOOKING_PHONE_RATE_LIMIT = 1
+    baseline_count = Appointment.objects.count()
     client = APIClient()
     first_slot = make_slot()
     second_slot = make_slot(minutes=60)
@@ -268,7 +269,7 @@ def test_guest_booking_rate_limit_applies_before_booking(settings):
     )
     assert first.status_code == 201
     assert second.status_code == 429
-    assert Appointment.objects.count() == 1
+    assert Appointment.objects.count() == baseline_count + 1
 
 
 def make_claim_grant(phone):

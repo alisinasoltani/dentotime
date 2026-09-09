@@ -4,6 +4,7 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.http import Http404, JsonResponse, StreamingHttpResponse
 from rest_framework.exceptions import APIException, AuthenticationFailed, PermissionDenied
+from django.db.models import Q
 
 from accounts.authentication import SessionVersionJWTAuthentication
 from accounts.models import Doctor
@@ -19,10 +20,21 @@ def _authenticate_and_authorize(request, thread_id):
         raise AuthenticationFailed("Authentication credentials were not provided.")
     user, validated_token = result
     queryset = MessageThread.objects.filter(deleted_at__isnull=True)
-    if not user.is_admin_role:
-        queryset = queryset.filter(participant_id=user.pk)
+    if user.is_admin_role:
+        queryset = queryset.exclude(thread_type=MessageThread.ThreadType.DIRECT)
+    else:
+        queryset = queryset.filter(
+            Q(participant_id=user.pk)
+            | Q(direct_participant_one_id=user.pk)
+            | Q(direct_participant_two_id=user.pk)
+        )
     try:
-        thread = queryset.only("id", "participant_id").get(pk=thread_id)
+        thread = queryset.only(
+            "id",
+            "participant_id",
+            "direct_participant_one_id",
+            "direct_participant_two_id",
+        ).get(pk=thread_id)
     except MessageThread.DoesNotExist as exc:
         raise Http404 from exc
     if user.is_doctor_role and not Doctor.objects.filter(

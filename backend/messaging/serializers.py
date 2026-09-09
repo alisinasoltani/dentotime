@@ -128,11 +128,6 @@ class MessageCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         thread = validated_data["thread"]
         asset_ids = validated_data.pop("asset_ids", [])
-        if asset_ids and thread.thread_type != MessageThread.ThreadType.DOCTOR_ADMIN:
-            raise serializers.ValidationError(
-                {"asset_ids": "Attachments are only allowed in doctor-admin threads."}
-            )
-
         try:
             assets = [
                 lock_attachable_asset(
@@ -175,6 +170,8 @@ class MessageCreateSerializer(serializers.ModelSerializer):
 
 
 class ParticipantSerializer(serializers.ModelSerializer):
+    specialty = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = (
@@ -184,7 +181,12 @@ class ParticipantSerializer(serializers.ModelSerializer):
             "last_name",
             "role",
             "profile_picture",
+            "specialty",
         )
+
+    def get_specialty(self, obj):
+        doctor = getattr(obj, "doctor_profile", None)
+        return doctor.specialty if doctor else ""
 
 
 class GuestContactSerializer(serializers.Serializer):
@@ -194,7 +196,7 @@ class GuestContactSerializer(serializers.Serializer):
 
 
 class ThreadListSerializer(serializers.ModelSerializer):
-    participant = ParticipantSerializer(read_only=True)
+    participant = serializers.SerializerMethodField()
     guest_contact = GuestContactSerializer(source="*", read_only=True)
     assigned_admin = ParticipantSerializer(read_only=True)
     unread_count = serializers.IntegerField(read_only=True, default=0)
@@ -217,11 +219,141 @@ class ThreadListSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        if instance.participant_id:
+        if instance.thread_type == MessageThread.ThreadType.DIRECT:
+            data["guest_contact"] = None
+            data["assigned_admin"] = None
+        elif instance.participant_id:
             data["guest_contact"] = None
         else:
             data["participant"] = None
         return data
+
+    def get_participant(self, instance):
+        participant = instance.participant
+        if instance.thread_type == MessageThread.ThreadType.DIRECT:
+            request = self.context.get("request")
+            participant = (
+                instance.direct_counterpart(request.user)
+                if request and request.user.is_authenticated
+                else None
+            )
+        return (
+            ParticipantSerializer(participant, context=self.context).data
+            if participant
+            else None
+        )
+
+
+class AdminConversationParticipantSerializer(serializers.Serializer):
+    """A privacy-safe participant snapshot used by the administrator archive."""
+
+    id = serializers.IntegerField(allow_null=True)
+    first_name = serializers.CharField()
+    last_name = serializers.CharField()
+    role = serializers.CharField()
+    phone_number = serializers.CharField(required=False, allow_blank=True)
+
+
+class AdminConversationHistorySerializer(serializers.ModelSerializer):
+    """Thread summary with both sides of a conversation, including direct chats."""
+
+    participants = serializers.SerializerMethodField()
+    message_count = serializers.IntegerField(read_only=True)
+    last_message = serializers.CharField(source="_last_message", read_only=True, default="")
+
+    class Meta:
+        model = MessageThread
+        fields = (
+            "id",
+            "thread_type",
+            "status",
+            "created_at",
+            "last_message_at",
+            "last_message",
+            "message_count",
+            "participants",
+        )
+
+    @staticmethod
+    def _user_snapshot(user):
+        return {
+            "id": user.pk,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "role": user.role,
+            "phone_number": user.phone_number,
+        }
+
+    def get_participants(self, instance):
+        if instance.thread_type == MessageThread.ThreadType.DIRECT:
+            return [
+                self._user_snapshot(instance.direct_participant_one),
+                self._user_snapshot(instance.direct_participant_two),
+            ]
+
+        participant = (
+            self._user_snapshot(instance.participant)
+            if instance.participant_id
+            else {
+                "id": None,
+                "first_name": instance.guest_first_name or "مهمان",
+                "last_name": instance.guest_last_name,
+                "role": Message.SenderType.GUEST,
+                "phone_number": instance.guest_phone,
+            }
+        )
+        support = (
+            self._user_snapshot(instance.assigned_admin)
+            if instance.assigned_admin_id
+            else {
+                "id": None,
+                "first_name": "پشتیبانی",
+                "last_name": "دنتوتایم",
+                "role": User.Role.ADMIN,
+                "phone_number": "",
+            }
+        )
+        return [participant, support]
+
+
+class AdminConversationHistoryDetailSerializer(AdminConversationHistorySerializer):
+    messages = MessageSerializer(many=True, read_only=True)
+
+    class Meta(AdminConversationHistorySerializer.Meta):
+        fields = AdminConversationHistorySerializer.Meta.fields + ("messages",)
+
+
+class ChatContactSerializer(ParticipantSerializer):
+    is_pinned = serializers.SerializerMethodField()
+    can_unpin = serializers.SerializerMethodField()
+
+    class Meta(ParticipantSerializer.Meta):
+        fields = ParticipantSerializer.Meta.fields + ("is_pinned", "can_unpin")
+
+    def get_is_pinned(self, obj):
+        return obj.pk in self.context.get("pinned_ids", set())
+
+    def get_can_unpin(self, obj):
+        return self.get_is_pinned(obj)
+
+
+class DirectThreadCreateSerializer(serializers.Serializer):
+    contact_id = serializers.PrimaryKeyRelatedField(
+        source="contact",
+        queryset=User.objects.filter(
+            is_active=True,
+            role__in=(User.Role.USER, User.Role.DOCTOR),
+        ),
+    )
+
+    def validate_contact_id(self, value):
+        if value.pk == self.context["request"].user.pk:
+            raise serializers.ValidationError("You cannot start a conversation with yourself.")
+        return value
+
+
+class PinnedContactWriteSerializer(DirectThreadCreateSerializer):
+    pass
 
 
 class AdminThreadUpdateSerializer(serializers.ModelSerializer):

@@ -119,6 +119,48 @@ class NormalUser(User):
         verbose_name_plural = "Normal Users"
 
 
+class DentalService(models.Model):
+    slug = models.SlugField(max_length=80, unique=True)
+    title = models.CharField(max_length=255)
+    short_title = models.CharField(max_length=120)
+    description = models.TextField(blank=True, default="")
+    icon = models.SlugField(max_length=64, blank=True, default="stethoscope")
+    position = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ("position", "pk")
+        indexes = [
+            models.Index(
+                fields=("position",),
+                condition=models.Q(is_active=True),
+                name="service_active_position_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return self.title
+
+
+class InsuranceProvider(models.Model):
+    name = models.CharField(max_length=150, unique=True)
+    position = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ("position", "pk")
+        indexes = [
+            models.Index(
+                fields=("position",),
+                condition=models.Q(is_active=True),
+                name="insurance_active_position_idx",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class Doctor(User):
     class AccountOwner(models.TextChoices):
         DOCTOR = "DOCTOR", "Doctor"
@@ -137,6 +179,25 @@ class Doctor(User):
 
     supervising_doctor_name = models.CharField(max_length=255, null=True, blank=True)
     clinic_name = models.CharField(max_length=255, null=True, blank=True)
+
+    specialty = models.CharField(max_length=255, blank=True, default="")
+    bio = models.TextField(blank=True, default="")
+    experience = models.CharField(max_length=255, blank=True, default="")
+    education = models.TextField(blank=True, default="")
+    clinical_history = models.TextField(blank=True, default="")
+    certifications = models.TextField(blank=True, default="")
+    address = models.TextField(blank=True, default="")
+    map_url = models.URLField(blank=True, default="")
+    services = models.ManyToManyField(
+        DentalService,
+        blank=True,
+        related_name="doctors",
+    )
+    insurances = models.ManyToManyField(
+        InsuranceProvider,
+        blank=True,
+        related_name="doctors",
+    )
 
     id_number = models.CharField(max_length=50, null=True, blank=True)
     medical_registration_number = models.CharField(max_length=100, null=True, blank=True)
@@ -212,6 +273,7 @@ class OTPChallenge(models.Model):
     class Purpose(models.TextChoices):
         SIGNUP = "SIGNUP", "Signup"
         PASSWORD_RESET = "PASSWORD_RESET", "Password reset"
+        PASSWORD_CHANGE = "PASSWORD_CHANGE", "Password change"
         APPOINTMENT_CLAIM = "APPOINTMENT_CLAIM", "Appointment claim"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -273,10 +335,41 @@ class OTPChallenge(models.Model):
             and timezone.now() < self.expires_at
         )
 
+class RatingParameter(models.Model):
+    class InputType(models.TextChoices):
+        STAR = "STAR", "امتیاز ستاره‌ای"
+        RECOMMENDATION = "RECOMMENDATION", "پیشنهاد به دیگران"
+        WAIT_TIME = "WAIT_TIME", "زمان انتظار"
+
+    key = models.SlugField(max_length=64, unique=True)
+    label = models.CharField(max_length=255)
+    prompt = models.CharField(max_length=500, blank=True, default="")
+    input_type = models.CharField(max_length=24, choices=InputType.choices)
+    options = models.JSONField(blank=True, default=list)
+    position = models.PositiveSmallIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("position", "pk")
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    input_type__in=["STAR", "RECOMMENDATION", "WAIT_TIME"]
+                ),
+                name="rating_parameter_valid_input_type",
+            ),
+        ]
+
+    def __str__(self):
+        return self.label
+
+
 class DoctorReview(models.Model):
     doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name='reviews')
     user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name='doctor_reviews')
-    rating = models.PositiveSmallIntegerField()
+    rating = models.DecimalField(max_digits=2, decimal_places=1)
     comment = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -299,3 +392,33 @@ class DoctorReview(models.Model):
 
     def __str__(self):
         return f"Review by {self.user.phone_number} on {self.doctor.phone_number}"
+
+
+class DoctorReviewAnswer(models.Model):
+    review = models.ForeignKey(
+        DoctorReview,
+        on_delete=models.CASCADE,
+        related_name="answers",
+    )
+    parameter = models.ForeignKey(
+        RatingParameter,
+        on_delete=models.PROTECT,
+        related_name="answers",
+    )
+    value = models.PositiveSmallIntegerField()
+
+    class Meta:
+        ordering = ("parameter__position", "parameter_id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("review", "parameter"),
+                name="unique_review_answer_per_parameter",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(value__gte=0, value__lte=5),
+                name="doctor_review_answer_between_0_and_5",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.review_id}: {self.parameter.key}={self.value}"

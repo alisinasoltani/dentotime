@@ -15,6 +15,7 @@ import {
     UserCog,
     PanelLeftClose,
     CalendarPlus,
+    SlidersHorizontal,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import api from "@/lib/api";
@@ -28,6 +29,7 @@ const navItems = [
     { title: "مدیریت زمان‌ها", href: "/admin/slots", icon: CalendarPlus },
     { title: "لیست پزشکان", href: "/admin/doctors", icon: Stethoscope },
     { title: "لیست کاربران", href: "/admin/users", icon: Users },
+    { title: "متغیرهای امتیاز", href: "/admin/rating-parameters", icon: SlidersHorizontal },
 ];
 
 export default function AdminSidebar({ onClose }: { onClose?: () => void }) {
@@ -52,11 +54,12 @@ export default function AdminSidebar({ onClose }: { onClose?: () => void }) {
         setIsLoggingOut(true);
         try {
             await api.post("/auth/logout/");
-            clearTokens();
-            router.push("/admin/login");
         } catch (error) {
             console.error("Logout failed", error);
         } finally {
+            clearTokens();
+            router.replace("/login");
+            router.refresh();
             setIsLoggingOut(false);
         }
     };
@@ -69,7 +72,7 @@ export default function AdminSidebar({ onClose }: { onClose?: () => void }) {
             <div className="flex h-full flex-col bg-white border border-[#5FB4FF] rounded-2xl w-72 p-4">
                 <div className="flex justify-center items-center gap-4">
                     <div className="w-10 h-10 md:h-12 md:w-12 rounded-md flex items-center justify-center text-gray-400 text-sm mb-4">
-                        <Image src={"/images/logo.png"} alt="" width={48} height={48} />
+                        <Image src={"/images/logo.png"} alt="" width={55} height={48} />
                     </div>
 
                     <div className="flex items-center justify-between mb-4">

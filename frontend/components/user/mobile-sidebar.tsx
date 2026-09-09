@@ -1,6 +1,6 @@
 "use client";
 
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
 import { useState } from "react";
@@ -18,6 +18,8 @@ export default function MobileSidebar() {
         </Button>
       </SheetTrigger>
       <SheetContent side="right" className="p-0 w-72 bg-transparent">
+        <SheetTitle className="sr-only">منوی پنل کاربری</SheetTitle>
+        <SheetDescription className="sr-only">دسترسی به بخش‌های پنل کاربری</SheetDescription>
         <UserSidebar onClose={() => setOpen(false)} />
       </SheetContent>
     </Sheet>

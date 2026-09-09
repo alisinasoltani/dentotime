@@ -6,6 +6,7 @@ import AdminSidebar from "@/components/admin/admin-sidebar";
 import MobileSidebar from "@/components/admin/mobile-sidebar";
 import { Loader2 } from "lucide-react";
 import { getCurrentUser, restoreSession } from "@/lib/auth";
+import { getRoleHomePath } from "@/lib/role-routing";
 
 export default function AdminDashboardLayout({
   children,
@@ -18,12 +19,17 @@ export default function AdminDashboardLayout({
   useEffect(() => {
     let active = true;
     const authorize = async () => {
-      const restored = await restoreSession();
-      if (!restored || !active) return router.replace("/admin/login");
-      const user = await getCurrentUser();
-      if (!active) return;
-      if (user.role !== "ADMIN") return router.replace("/admin/login");
-      setIsAuthorized(true);
+      try {
+        const restored = await restoreSession();
+        if (!active) return;
+        if (!restored) return router.replace("/login");
+        const user = await getCurrentUser();
+        if (!active) return;
+        if (user.role !== "ADMIN") return router.replace(getRoleHomePath(user.role));
+        setIsAuthorized(true);
+      } catch {
+        if (active) router.replace("/login");
+      }
     };
     void authorize();
     return () => { active = false; };

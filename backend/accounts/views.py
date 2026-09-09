@@ -36,7 +36,18 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
-from .models import User, NormalUser, Doctor, DoctorDocument, DoctorReview, OTPChallenge
+from .models import (
+    DentalService,
+    Doctor,
+    DoctorDocument,
+    DoctorReview,
+    DoctorReviewAnswer,
+    InsuranceProvider,
+    NormalUser,
+    OTPChallenge,
+    RatingParameter,
+    User,
+)
 from .otp import (
     GENERIC_REQUEST_MESSAGE,
     GENERIC_VERIFY_ERROR,
@@ -45,17 +56,20 @@ from .otp import (
     verify_challenge,
 )
 from .permissions import IsAdminRole, IsDoctorRole, IsNormalUser
+from .validators import normalize_phone_number
 from .serializers import (
     LoginSerializer, SignupSerializer, UserDetailSerializer,
     UserProfileSerializer, PasswordChangeSerializer,
     AdminUserListSerializer, AdminDoctorListSerializer, AdminDoctorDetailSerializer,
     DoctorVerificationStatusSerializer, DoctorVerificationSubmitSerializer,
-    DoctorReviewSerializer, PublicDoctorListSerializer, PublicDoctorDetailSerializer,
-    RatingVoterSerializer,
+    DoctorReviewSerializer, DoctorReviewSubmissionSerializer,
+    PublicDoctorListSerializer, PublicDoctorDetailSerializer,
+    DentalServiceSerializer, InsuranceProviderSerializer, DoctorPublicProfileSerializer,
+    RatingParameterSerializer, RatingVoterSerializer,
 )
 
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
-from .throttles import LoginThrottle, SignupThrottle
+from .throttles import LoginThrottle, RefreshThrottle, SignupThrottle
 from core.sms_service import send_doctor_approved, send_doctor_rejected, send_admin_alert
 from appointments.models import Appointment
 from messaging.models import Message, ThreadReadState
@@ -63,6 +77,62 @@ from .sessions import set_password_and_revoke
 
 
 User = get_user_model()
+
+
+def get_public_doctor(identifier, *, queryset=None):
+    if queryset is None:
+        queryset = Doctor.objects.all()
+    lookup = Q(pk=int(identifier)) if str(identifier).isdigit() else Q(username=identifier)
+    return get_object_or_404(
+        queryset,
+        lookup,
+        is_active=True,
+        verification_status=Doctor.VerificationStatus.APPROVED,
+    )
+
+
+def get_review_eligibility(*, user, doctor):
+    if not user.is_authenticated or not user.is_normal_user:
+        return {"state": "AUTH_REQUIRED"}
+
+    appointments = Appointment.objects.filter(
+        patient=user.normaluser,
+        doctor=doctor,
+    ).select_related("slot")
+    if not appointments.exists():
+        return {"state": "NO_APPOINTMENT"}
+
+    valid_appointments = appointments.exclude(
+        status__in=[
+            Appointment.Status.CANCELLED,
+            Appointment.Status.REJECTED,
+            Appointment.Status.NO_SHOW,
+        ]
+    )
+    if not valid_appointments.exists():
+        return {"state": "NO_APPOINTMENT"}
+    past_appointments = valid_appointments.filter(slot__end_at__lte=timezone.now())
+    if not past_appointments.exists():
+        return {"state": "UPCOMING_APPOINTMENT"}
+
+    attended = past_appointments.filter(
+        attendance_status=Appointment.AttendanceStatus.ATTENDED
+    ).order_by("-slot__end_at").first()
+    if attended is None:
+        return {"state": "VISIT_CONFIRMATION_REQUIRED"}
+
+    existing_review = (
+        DoctorReview.objects.filter(doctor=doctor, user=user)
+        .prefetch_related("answers__parameter")
+        .first()
+    )
+    return {
+        "state": "ELIGIBLE",
+        "qualifying_appointment_id": str(attended.pk),
+        "existing_review": (
+            DoctorReviewSerializer(existing_review).data if existing_review else None
+        ),
+    }
 
 
 def get_tokens_for_user(user: User) -> dict[str, str]:
@@ -128,6 +198,9 @@ class SignupView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class LoginView(APIView):
+    # Password login establishes a new identity; an old Bearer token must not
+    # reject the request before its submitted credentials are checked.
+    authentication_classes = ()
     permission_classes = (AllowAny,)
     throttle_classes = [LoginThrottle]
 
@@ -154,12 +227,16 @@ class LoginView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        if user_type == "USER" and not user.is_normal_user:
-            return Response({"detail": "Please use the correct portal for users."}, status=status.HTTP_403_FORBIDDEN)
-        if user_type == "DOCTOR" and not user.is_doctor_role:
-            return Response({"detail": "Please use the correct portal for doctors."}, status=status.HTTP_403_FORBIDDEN)
-        if user_type == "ADMIN" and not user.is_admin_role:
-            return Response({"detail": "Please use the admin portal."}, status=status.HTTP_403_FORBIDDEN)
+        # System administrators may also enter through the public login form,
+        # which only exposes patient and doctor tabs. Their actual role in the
+        # response remains ADMIN, so the client can route to the admin panel.
+        if not user.is_admin_role:
+            if user_type == "USER" and not user.is_normal_user:
+                return Response({"detail": "Please use the correct portal for users."}, status=status.HTTP_403_FORBIDDEN)
+            if user_type == "DOCTOR" and not user.is_doctor_role:
+                return Response({"detail": "Please use the correct portal for doctors."}, status=status.HTTP_403_FORBIDDEN)
+            if user_type == "ADMIN":
+                return Response({"detail": "Please use the admin portal."}, status=status.HTTP_403_FORBIDDEN)
 
         # Update last_login manually since we aren't using django's login()
         user.last_login = timezone.now()
@@ -191,6 +268,7 @@ class SessionTokenRefreshSerializer(TokenRefreshSerializer):
 
 class CustomTokenRefreshView(APIView):
     permission_classes = (AllowAny,)
+    throttle_classes = (RefreshThrottle,)
 
     def post(self, request):
         raw_refresh = request.COOKIES.get(settings.REFRESH_COOKIE_NAME)
@@ -221,7 +299,7 @@ class MeView(RetrieveUpdateAPIView):
 
 
 class PasswordChangeView(APIView):
-    """Change current user's password."""
+    """Change current user's password after old-password or OTP verification."""
     permission_classes = (IsAuthenticated,)
 
     def post(self, request):
@@ -230,15 +308,60 @@ class PasswordChangeView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         
         user = request.user
-        if not user.check_password(serializer.validated_data["old_password"]):
-            return Response({"detail": "Wrong old password."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        with transaction.atomic():
-            locked_user = User.objects.select_for_update().get(pk=user.pk)
-            set_password_and_revoke(locked_user, serializer.validated_data["new_password"])
+        old_password = serializer.validated_data.get("old_password")
+        otp_token = serializer.validated_data.get("otp_token")
+        try:
+            with transaction.atomic():
+                locked_user = User.objects.select_for_update().get(pk=user.pk)
+                if otp_token:
+                    consume_grant(
+                        token=otp_token,
+                        raw_phone=locked_user.phone_number,
+                        purpose=OTPChallenge.Purpose.PASSWORD_CHANGE,
+                    )
+                elif not locked_user.check_password(old_password):
+                    return Response(
+                        {"detail": "Wrong old password."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                set_password_and_revoke(locked_user, serializer.validated_data["new_password"])
+        except (ValueError, DjangoValidationError):
+            return Response({"detail": GENERIC_VERIFY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
         response = Response({"detail": "Password changed successfully."}, status=status.HTTP_200_OK)
         clear_refresh_cookie(response)
         return response
+
+
+class PasswordChangeOTPView(APIView):
+    """Send an OTP to the authenticated user's registered phone number."""
+
+    permission_classes = (IsAuthenticated,)
+
+    def post(self, request):
+        try:
+            challenge = create_challenge(
+                request,
+                request.user.phone_number,
+                OTPChallenge.Purpose.PASSWORD_CHANGE,
+            )
+        except DjangoValidationError:
+            return Response(
+                {"detail": "A valid phone number is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if challenge is None:
+            return Response(
+                {"detail": "Please wait before requesting another code."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+        return Response(
+            {
+                "detail": GENERIC_REQUEST_MESSAGE,
+                "challenge_id": str(challenge.pk),
+                "phone_number": request.user.phone_number,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 
 class AdminUserListView(ListAPIView):
@@ -475,12 +598,29 @@ class RequestOTPView(APIView):
     def post(self, request):
         phone = request.data.get("phone_number")
         purpose = request.data.get("purpose")
-        if not phone or purpose not in OTPChallenge.Purpose.values:
+        public_purposes = {
+            OTPChallenge.Purpose.SIGNUP,
+            OTPChallenge.Purpose.PASSWORD_RESET,
+        }
+        if not phone or purpose not in public_purposes:
             return Response(
                 {"detail": "A valid phone number and purpose are required."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
+            normalized_phone = normalize_phone_number(phone)
+            # A signup OTP is only for creating a new account.  Rejecting it
+            # here avoids consuming SMS quota and makes the next action clear.
+            if purpose == OTPChallenge.Purpose.SIGNUP and User.objects.filter(
+                phone_number=normalized_phone
+            ).exists():
+                return Response(
+                    {
+                        "detail": "An account with this phone number already exists. Please sign in instead.",
+                        "code": "ACCOUNT_EXISTS",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
             challenge = create_challenge(request, phone, purpose)
         except DjangoValidationError:
             return Response({"detail": "A valid phone number is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -499,6 +639,13 @@ class VerifyOTPView(APIView):
         challenge_id = request.data.get("challenge_id")
         if not all((phone, code, challenge_id)) or purpose not in OTPChallenge.Purpose.values:
             return Response({"detail": GENERIC_VERIFY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
+        if purpose == OTPChallenge.Purpose.PASSWORD_CHANGE:
+            try:
+                normalized_phone = normalize_phone_number(phone)
+            except DjangoValidationError:
+                normalized_phone = None
+            if not request.user.is_authenticated or normalized_phone != request.user.phone_number:
+                return Response({"detail": GENERIC_VERIFY_ERROR}, status=status.HTTP_400_BAD_REQUEST)
         try:
             otp_token = verify_challenge(
                 challenge_id=challenge_id,
@@ -548,17 +695,47 @@ class ResetPasswordView(APIView):
         clear_refresh_cookie(response)
         return response
 
+class DoctorPublicProfileView(generics.RetrieveUpdateAPIView):
+    permission_classes = (IsDoctorRole,)
+    serializer_class = DoctorPublicProfileSerializer
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_object(self):
+        return get_object_or_404(Doctor, pk=self.request.user.pk)
+
+
 class PublicDoctorListView(generics.ListAPIView):
     """لیست عمومی دکترهای تایید شده برای نمایش در سایت (با قابلیت جستجو)"""
     serializer_class = PublicDoctorListSerializer
     permission_classes = [AllowAny]
     filter_backends = [SearchFilter]
-    search_fields = ['first_name', 'last_name', 'clinic_name']
+    search_fields = [
+        'first_name', 'last_name', 'clinic_name', 'specialty', 'address',
+        'services__title', 'insurances__name',
+    ]
 
     def get_queryset(self):
-        return Doctor.objects.filter(
+        doctors = Doctor.objects.filter(
             verification_status=Doctor.VerificationStatus.APPROVED,
             is_active=True
+        )
+        # IDs from the shared active catalog; both conditions must match.
+        for parameter, relation in (("service_id", "services"), ("insurance_id", "insurances")):
+            value = self.request.query_params.get(parameter)
+            if value is not None:
+                if not value.isascii() or not value.isdecimal() or len(value) > 18:
+                    from rest_framework.exceptions import ValidationError
+                    raise ValidationError({parameter: "Enter a valid catalog ID."})
+                doctors = doctors.filter(**{f"{relation}__id": int(value), f"{relation}__is_active": True})
+        return doctors.prefetch_related(
+            Prefetch(
+                "services",
+                queryset=DentalService.objects.filter(is_active=True).order_by("position", "pk"),
+            ),
+            Prefetch(
+                "insurances",
+                queryset=InsuranceProvider.objects.filter(is_active=True).order_by("position", "pk"),
+            ),
         ).annotate(
             likes_count=Count("likes", distinct=True),
             average_rating=Coalesce(Avg("reviews__rating"), Value(0.0), output_field=FloatField()),
@@ -578,13 +755,15 @@ class PublicDoctorPreviewView(APIView):
                 verification_status=Doctor.VerificationStatus.APPROVED,
                 is_active=True,
             )
-            .only(
-                "id",
-                "first_name",
-                "last_name",
-                "account_owner",
-                "clinic_name",
-                "profile_picture",
+            .prefetch_related(
+                Prefetch(
+                    "services",
+                    queryset=DentalService.objects.filter(is_active=True).order_by("position", "pk"),
+                ),
+                Prefetch(
+                    "insurances",
+                    queryset=InsuranceProvider.objects.filter(is_active=True).order_by("position", "pk"),
+                ),
             )
             .annotate(
                 likes_count=Count("likes", distinct=True),
@@ -604,6 +783,15 @@ class PublicDoctorDetailView(generics.RetrieveAPIView):
     queryset = Doctor.objects.filter(
         verification_status=Doctor.VerificationStatus.APPROVED,
         is_active=True,
+    ).prefetch_related(
+        Prefetch(
+            "services",
+            queryset=DentalService.objects.filter(is_active=True).order_by("position", "pk"),
+        ),
+        Prefetch(
+            "insurances",
+            queryset=InsuranceProvider.objects.filter(is_active=True).order_by("position", "pk"),
+        ),
     )
 
     def get_queryset(self):
@@ -620,17 +808,21 @@ class PublicDoctorDetailView(generics.RetrieveAPIView):
             is_liked=liked,
         )
 
+    def get_object(self):
+        return get_public_doctor(
+            self.kwargs["identifier"],
+            queryset=self.get_queryset(),
+        )
+
 class LikeDoctorView(APIView):
     """لایک یا آنلایک کردن یک دکتر (نیازمند لاگین)"""
     permission_classes = [IsNormalUser]
 
-    def post(self, request, pk):
+    def post(self, request, identifier):
         with transaction.atomic():
-            doctor = get_object_or_404(
-                Doctor.objects.select_for_update(),
-                pk=pk,
-                is_active=True,
-                verification_status=Doctor.VerificationStatus.APPROVED,
+            doctor = get_public_doctor(
+                identifier,
+                queryset=Doctor.objects.select_for_update(),
             )
             relation = Doctor.likes.through.objects.filter(
                 doctor_id=doctor.pk,
@@ -651,6 +843,142 @@ class LikeDoctorView(APIView):
             status=status.HTTP_200_OK,
         )
 
+class RatingParameterListView(generics.ListAPIView):
+    serializer_class = RatingParameterSerializer
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+    queryset = RatingParameter.objects.filter(is_active=True).order_by("position", "pk")
+
+
+class PublicCatalogView(APIView):
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+
+    def get(self, request):
+        services = DentalService.objects.filter(is_active=True).order_by("position", "pk")
+        insurances = InsuranceProvider.objects.filter(is_active=True).order_by("position", "pk")
+        return Response(
+            {
+                "services": DentalServiceSerializer(services, many=True).data,
+                "insurances": InsuranceProviderSerializer(insurances, many=True).data,
+            }
+        )
+
+
+class AdminRatingParameterListCreateView(generics.ListCreateAPIView):
+    serializer_class = RatingParameterSerializer
+    permission_classes = (IsAdminRole,)
+    queryset = RatingParameter.objects.order_by("position", "pk")
+
+
+class AdminRatingParameterDetailView(generics.RetrieveUpdateAPIView):
+    serializer_class = RatingParameterSerializer
+    permission_classes = (IsAdminRole,)
+    queryset = RatingParameter.objects.all()
+
+
+class ReviewEligibilityView(APIView):
+    permission_classes = (IsNormalUser,)
+
+    def get(self, request, identifier):
+        doctor = get_public_doctor(identifier)
+        return Response(get_review_eligibility(user=request.user, doctor=doctor))
+
+
+class RatingSummaryView(APIView):
+    permission_classes = (AllowAny,)
+    authentication_classes = ()
+
+    def get(self, request, identifier):
+        doctor = get_public_doctor(identifier)
+        parameters = list(
+            RatingParameter.objects.filter(is_active=True).order_by("position", "pk")
+        )
+        reviews = DoctorReview.objects.filter(doctor=doctor)
+        review_summary = reviews.aggregate(
+            average_rating=Coalesce(
+                Avg("rating"), Value(0.0), output_field=FloatField()
+            ),
+            vote_count=Count("pk"),
+        )
+        review_summary["average_rating"] = round(
+            float(review_summary["average_rating"] or 0), 1
+        )
+        answer_stats = {
+            row["parameter_id"]: row
+            for row in DoctorReviewAnswer.objects.filter(
+                review__doctor=doctor,
+                parameter__is_active=True,
+            )
+            .values("parameter_id")
+            .annotate(average=Avg("value"), answer_count=Count("pk"))
+        }
+
+        recommendation = next(
+            (
+                parameter
+                for parameter in parameters
+                if parameter.input_type == RatingParameter.InputType.RECOMMENDATION
+            ),
+            None,
+        )
+        recommendation_stats = {"total": 0, "recommended": 0}
+        if recommendation:
+            recommendation_answers = DoctorReviewAnswer.objects.filter(
+                review__doctor=doctor,
+                parameter=recommendation,
+            )
+            recommendation_stats = recommendation_answers.aggregate(
+                total=Count("pk"),
+                recommended=Count("pk", filter=Q(value=1)),
+            )
+
+        wait_parameter = next(
+            (
+                parameter
+                for parameter in parameters
+                if parameter.input_type == RatingParameter.InputType.WAIT_TIME
+            ),
+            None,
+        )
+        average_wait_time = None
+        if wait_parameter:
+            wait_average = DoctorReviewAnswer.objects.filter(
+                review__doctor=doctor,
+                parameter=wait_parameter,
+            ).aggregate(value=Avg("value"))["value"]
+            if wait_average is not None and wait_parameter.options:
+                wait_code = max(
+                    0,
+                    min(len(wait_parameter.options) - 1, round(float(wait_average))),
+                )
+                average_wait_time = wait_parameter.options[wait_code]
+
+        total_recommendations = recommendation_stats["total"] or 0
+        recommendation_percentage = (
+            round((recommendation_stats["recommended"] or 0) * 100 / total_recommendations)
+            if total_recommendations
+            else 0
+        )
+        parameter_data = []
+        for parameter in parameters:
+            data = RatingParameterSerializer(parameter).data
+            stat = answer_stats.get(parameter.pk)
+            data["average"] = round(float(stat["average"]), 2) if stat else None
+            data["answer_count"] = stat["answer_count"] if stat else 0
+            parameter_data.append(data)
+
+        return Response(
+            {
+                **review_summary,
+                "recommendation_percentage": recommendation_percentage,
+                "recommendation_count": total_recommendations,
+                "average_wait_time": average_wait_time,
+                "parameters": parameter_data,
+            }
+        )
+
+
 class ReviewListCreateView(generics.ListCreateAPIView):
     """دیدن نظرات و ثبت نظر جدید برای یک دکتر"""
     serializer_class = DoctorReviewSerializer
@@ -662,34 +990,90 @@ class ReviewListCreateView(generics.ListCreateAPIView):
         return [AllowAny()]
 
     def get_queryset(self):
-        doctor = get_object_or_404(
-            Doctor,
-            pk=self.kwargs['pk'],
-            is_active=True,
-            verification_status=Doctor.VerificationStatus.APPROVED,
+        identifier = self.kwargs["identifier"]
+        doctor_lookup = (
+            Q(doctor_id=int(identifier))
+            if identifier.isdigit()
+            else Q(doctor__username=identifier)
         )
-        return DoctorReview.objects.filter(doctor=doctor).select_related("user").only(
-            "id", "doctor_id", "user_id", "user__first_name", "user__last_name",
-            "rating", "comment", "created_at", "updated_at",
+        return (
+            DoctorReview.objects.filter(
+                doctor_lookup,
+                doctor__is_active=True,
+                doctor__verification_status=Doctor.VerificationStatus.APPROVED,
+            )
+            .select_related("user")
+            .prefetch_related("answers__parameter")
+            .only(
+                "id", "doctor_id", "user_id", "user__first_name", "user__last_name",
+                "rating", "comment", "created_at", "updated_at",
+            )
         )
 
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        # A populated review page already proves the doctor exists. For an empty
+        # page, preserve the detail endpoint's 404 behavior without adding a
+        # query to the common path (reviews + nested answers stay at 3 queries).
+        if response.data.get("count") == 0:
+            get_public_doctor(self.kwargs["identifier"])
+        return response
+
     def create(self, request, *args, **kwargs):
-        doctor = get_object_or_404(
-            Doctor,
-            pk=self.kwargs['pk'],
-            is_active=True,
-            verification_status=Doctor.VerificationStatus.APPROVED,
-        )
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        review, created = DoctorReview.objects.update_or_create(
-            doctor=doctor,
-            user=request.user,
-            defaults={
-                "rating": serializer.validated_data["rating"],
-                "comment": serializer.validated_data.get("comment", ""),
-            },
-        )
+        doctor = get_public_doctor(self.kwargs["identifier"])
+        eligibility = get_review_eligibility(user=request.user, doctor=doctor)
+        if eligibility["state"] != "ELIGIBLE":
+            return Response(eligibility, status=status.HTTP_409_CONFLICT)
+
+        submission = DoctorReviewSubmissionSerializer(data=request.data)
+        submission.is_valid(raise_exception=True)
+        submitted = {
+            answer["parameter_id"]: answer["value"]
+            for answer in submission.validated_data["answers"]
+        }
+
+        with transaction.atomic():
+            parameters = list(
+                RatingParameter.objects.select_for_update()
+                .filter(is_active=True)
+                .order_by("position", "pk")
+            )
+            if set(submitted) != {parameter.pk for parameter in parameters}:
+                from rest_framework.exceptions import ValidationError
+
+                raise ValidationError(
+                    {"answers": "Rating parameters changed. Please reload and try again."}
+                )
+            star_values = [
+                submitted[parameter.pk]
+                for parameter in parameters
+                if parameter.input_type == RatingParameter.InputType.STAR
+            ]
+            if not star_values:
+                from rest_framework.exceptions import ValidationError
+
+                raise ValidationError({"answers": "At least one star parameter is required."})
+            rating = round(sum(star_values) / len(star_values), 1)
+            review, created = DoctorReview.objects.update_or_create(
+                doctor=doctor,
+                user=request.user,
+                defaults={
+                    "rating": rating,
+                    "comment": submission.validated_data.get("comment", ""),
+                },
+            )
+            review.answers.all().delete()
+            DoctorReviewAnswer.objects.bulk_create(
+                [
+                    DoctorReviewAnswer(
+                        review=review,
+                        parameter=parameter,
+                        value=submitted[parameter.pk],
+                    )
+                    for parameter in parameters
+                ]
+            )
+        review = DoctorReview.objects.prefetch_related("answers__parameter").get(pk=review.pk)
         output = DoctorReviewSerializer(review, context=self.get_serializer_context())
         return Response(
             output.data,
@@ -728,9 +1112,14 @@ class BaseRatingVoterListView(generics.ListAPIView):
 
     def get_queryset(self):
         doctor = self.get_doctor()
-        queryset = DoctorReview.objects.filter(doctor=doctor).select_related("user").only(
-            "id", "doctor_id", "user_id", "user__first_name", "user__last_name",
-            "rating", "comment", "created_at", "updated_at",
+        queryset = (
+            DoctorReview.objects.filter(doctor=doctor)
+            .select_related("user")
+            .prefetch_related("answers__parameter")
+            .only(
+                "id", "doctor_id", "user_id", "user__first_name", "user__last_name",
+                "rating", "comment", "created_at", "updated_at",
+            )
         )
         self.rating_summary = queryset.aggregate(
             average_rating=Coalesce(Avg("rating"), Value(0.0), output_field=FloatField()),
@@ -765,3 +1154,4 @@ class AdminRatingVoterListView(BaseRatingVoterListView):
 
     def get_doctor(self):
         return get_object_or_404(Doctor, pk=self.kwargs["pk"])
+    InsuranceProvider,

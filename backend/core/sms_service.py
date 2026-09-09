@@ -29,6 +29,10 @@ def _masked_mobile(mobile: str) -> str:
 
 def send_sms(mobile, template_id, parameters):
     """Send one SMS with strict connect/read timeouts and no sensitive logs."""
+    if getattr(settings, "DEMO_MODE", False):
+        from demo.sms import capture_sms
+
+        return capture_sms(mobile, template_id, parameters)
     payload = {
         "mobile": normalize_mobile(mobile),
         "templateId": template_id,
@@ -64,7 +68,7 @@ def queue_otp_sms(mobile, code):
     return _sms_executor.submit(
         send_sms,
         mobile,
-        288919,
+        settings.SMS_IR_OTP_TEMPLATE_ID,
         [{"name": "Code", "value": code}],
     )
 
@@ -87,7 +91,7 @@ def queue_new_message(mobile, time):
 
 
 def send_otp(mobile, code):
-    return send_sms(mobile, 288919, [{"name": "Code", "value": code}])
+    return send_sms(mobile, settings.SMS_IR_OTP_TEMPLATE_ID, [{"name": "Code", "value": code}])
 
 
 def send_appt_approved(mobile, date, time):

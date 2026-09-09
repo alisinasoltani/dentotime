@@ -1,6 +1,7 @@
 import hashlib
 import uuid
 from datetime import timedelta
+from urllib.parse import urlsplit
 
 import pytest
 from botocore.exceptions import ClientError
@@ -18,6 +19,7 @@ def configure_storage(settings):
     settings.AWS_SECRET_ACCESS_KEY = "testing"
     settings.AWS_STORAGE_BUCKET_NAME = "dentotime-upload-tests"
     settings.AWS_S3_ENDPOINT_URL = ""
+    settings.AWS_S3_PUBLIC_ENDPOINT_URL = ""
     settings.AWS_S3_REGION_NAME = "us-east-1"
     settings.UPLOAD_PART_SIZE = 5 * 1024 * 1024
     settings.AWS_S3_PRESIGN_EXPIRY_SECONDS = 60
@@ -82,6 +84,80 @@ def approved_doctor_thread(doctor_user):
     return MessageThread.objects.create(
         participant=doctor_user,
         thread_type=MessageThread.ThreadType.DOCTOR_ADMIN,
+    )
+
+
+@pytest.mark.django_db
+def test_patient_can_create_upload_only_for_own_user_admin_thread(
+    authed_client, normal_user, admin_user, mock_s3, settings
+):
+    configure_storage(settings)
+    own_thread = MessageThread.objects.create(
+        participant=normal_user,
+        thread_type=MessageThread.ThreadType.USER_ADMIN,
+    )
+    created = create_session(
+        authed_client,
+        content=b"patient attachment",
+        thread=own_thread,
+    )
+
+    assert created.status_code == 201
+    session = UploadSession.objects.get(pk=created.data["upload_id"])
+    assert session.owner_id == normal_user.pk
+    assert session.asset.scope_thread_id == own_thread.pk
+
+    other_thread = MessageThread.objects.create(
+        participant=admin_user,
+        thread_type=MessageThread.ThreadType.USER_ADMIN,
+    )
+    hidden = authed_client.post(
+        "/api/v1/files/uploads/",
+        {
+            "client_upload_id": str(uuid.uuid4()),
+            "purpose": "chat_attachment",
+            "thread_id": str(other_thread.pk),
+            "file_name": "scan.stl",
+            "file_size": 1,
+            "file_content_type": "model/stl",
+            "sha256": "a" * 64,
+        },
+        format="json",
+    )
+    assert hidden.status_code == 404
+
+
+@pytest.mark.django_db
+def test_presigned_part_uses_browser_visible_storage_endpoint(
+    authed_client, normal_user, mock_s3, settings
+):
+    configure_storage(settings)
+    settings.AWS_S3_PUBLIC_ENDPOINT_URL = "https://uploads.example.test"
+    thread = MessageThread.objects.create(
+        participant=normal_user,
+        thread_type=MessageThread.ThreadType.USER_ADMIN,
+    )
+    content = b"browser upload"
+    payload = create_session(authed_client, content=content, thread=thread).data
+
+    response = authed_client.post(
+        f"/api/v1/files/uploads/{payload['upload_id']}/parts/presign/",
+        {
+            "parts": [
+                {
+                    "part_number": 1,
+                    "checksum_sha256": hashlib.sha256(content).hexdigest(),
+                }
+            ]
+        },
+        format="json",
+    )
+
+    assert response.status_code == 200, response.data
+    presigned_url = urlsplit(response.data["parts"][0]["url"])
+    assert (presigned_url.scheme, presigned_url.netloc) == (
+        "https",
+        "uploads.example.test",
     )
 
 
@@ -279,7 +355,7 @@ def test_upload_access_thread_scope_expiry_and_cancellation(
     ).data
     other_client = APIClient()
     other_client.force_authenticate(normal_user)
-    assert other_client.get(f"/api/v1/files/uploads/{payload['upload_id']}/").status_code == 403
+    assert other_client.get(f"/api/v1/files/uploads/{payload['upload_id']}/").status_code == 404
     admin_client = APIClient()
     admin_client.force_authenticate(admin_user)
     assert admin_client.get(f"/api/v1/files/uploads/{payload['upload_id']}/").status_code == 404

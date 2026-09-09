@@ -2,12 +2,13 @@ from botocore.exceptions import BotoCoreError, ClientError
 from django.core.cache import cache
 from django.db import connection
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from rest_framework.permissions import AllowAny
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 
-from accounts.permissions import IsActiveAuthenticated, IsAdminRole, IsDoctorOrAdmin
+from accounts.permissions import IsActiveAuthenticated, IsAdminRole
 from django.conf import settings
 
 from core.downloads import AssetDownloadDenied, grant_asset_download
@@ -60,7 +61,7 @@ class ReadinessView(APIView):
 
 class FileUploadView(APIView):
     """Compatibility endpoint that refuses unsafe single-request uploads."""
-    permission_classes = (IsDoctorOrAdmin,)
+    permission_classes = (IsActiveAuthenticated,)
 
     def post(self, request):
         return Response(
@@ -120,14 +121,29 @@ def _upload_scope(request, data):
         thread_id = data.get("thread_id")
         if not thread_id:
             raise UploadError("thread_id is required for chat attachments.")
-        queryset = MessageThread.objects.all()
-        if not request.user.is_admin_role:
-            queryset = queryset.filter(participant=request.user)
+        queryset = MessageThread.objects.filter(deleted_at__isnull=True)
+        if request.user.is_admin_role:
+            queryset = queryset.exclude(thread_type=MessageThread.ThreadType.DIRECT)
+        else:
+            expected_thread_type = (
+                MessageThread.ThreadType.DOCTOR_ADMIN
+                if request.user.is_doctor_role
+                else MessageThread.ThreadType.USER_ADMIN
+            )
+            queryset = queryset.filter(
+                Q(participant=request.user, thread_type=expected_thread_type)
+                | Q(
+                    thread_type=MessageThread.ThreadType.DIRECT,
+                    direct_participant_one=request.user,
+                )
+                | Q(
+                    thread_type=MessageThread.ThreadType.DIRECT,
+                    direct_participant_two=request.user,
+                )
+            )
         thread = get_object_or_404(queryset, pk=thread_id)
         if request.user.is_doctor_role and not request.user.doctor_profile.chat_enabled:
             raise UploadError("Only approved doctors can upload chat attachments.")
-        if thread.thread_type != MessageThread.ThreadType.DOCTOR_ADMIN:
-            raise UploadError("Attachments are only allowed in doctor-administrator threads.")
     elif purpose == FileAsset.Purpose.VERIFICATION_DOCUMENT:
         if not request.user.is_doctor_role:
             raise UploadError("Only doctors can upload verification documents.")
@@ -138,7 +154,7 @@ def _upload_scope(request, data):
 
 
 class UploadSessionCreateView(APIView):
-    permission_classes = (IsDoctorOrAdmin,)
+    permission_classes = (IsActiveAuthenticated,)
 
     def post(self, request):
         serializer = UploadSessionCreateSerializer(data=request.data)
@@ -177,7 +193,7 @@ class UploadSessionCreateView(APIView):
 
 
 class UploadSessionDetailView(APIView):
-    permission_classes = (IsDoctorOrAdmin,)
+    permission_classes = (IsActiveAuthenticated,)
 
     def get(self, request, pk):
         session = _owned_session(request, pk)
@@ -201,7 +217,7 @@ class UploadSessionDetailView(APIView):
 
 
 class UploadPartPresignView(APIView):
-    permission_classes = (IsDoctorOrAdmin,)
+    permission_classes = (IsActiveAuthenticated,)
 
     def post(self, request, pk):
         session = _owned_session(request, pk)
@@ -215,7 +231,7 @@ class UploadPartPresignView(APIView):
 
 
 class UploadPartRecordView(APIView):
-    permission_classes = (IsDoctorOrAdmin,)
+    permission_classes = (IsActiveAuthenticated,)
 
     def post(self, request, pk):
         session = _owned_session(request, pk)
@@ -236,7 +252,7 @@ class UploadPartRecordView(APIView):
 
 
 class UploadCompleteView(APIView):
-    permission_classes = (IsDoctorOrAdmin,)
+    permission_classes = (IsActiveAuthenticated,)
 
     def post(self, request, pk):
         session = _owned_session(request, pk)
@@ -250,7 +266,7 @@ class UploadCompleteView(APIView):
 
 
 class LegacyFileConfirmView(APIView):
-    permission_classes = (IsDoctorOrAdmin,)
+    permission_classes = (IsActiveAuthenticated,)
 
     def post(self, request):
         return Response(

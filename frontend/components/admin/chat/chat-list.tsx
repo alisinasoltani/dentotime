@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -109,7 +110,7 @@ export default function AdminChatList({
   ];
 
   return (
-    <div className="flex h-full w-full flex-col border-l border-gray-100 bg-white md:w-87.5">
+    <div dir="rtl" data-testid="admin-chat-sidebar" className="flex h-full min-w-0 w-full flex-col overflow-hidden border-l border-gray-100 bg-white md:w-87.5">
       <div className="flex items-center gap-2 border-b border-gray-100 p-4">
         {onBack && (
           <button
@@ -154,7 +155,7 @@ export default function AdminChatList({
         ))}
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea dir="rtl" className="min-h-0 min-w-0 flex-1" viewportClassName="[&>div]:block!">
         {visibleThreads.length === 0 ? (
           <p className="p-8 text-center text-sm text-gray-400">گفتگویی یافت نشد</p>
         ) : (
@@ -166,54 +167,57 @@ export default function AdminChatList({
               <div key={thread.id}>
                 <div
                   role="button"
+                  data-testid="chat-thread-row"
                   tabIndex={0}
                   onClick={() => onSelectThread(thread)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") onSelectThread(thread);
                   }}
                   className={cn(
-                    "flex cursor-pointer items-center gap-3 p-3",
+                    "flex w-full min-w-0 cursor-pointer items-center gap-3 p-3 text-right",
                     activeThreadId === thread.id ? "bg-[#F5FAFF]" : "hover:bg-gray-50",
                   )}
                 >
-                  <DropdownMenu>
+                  <Avatar className="size-12 shrink-0">
+                    <AvatarImage src={thread.participant?.profile_picture || undefined} alt="" />
+                    <AvatarFallback>{name[0] || "؟"}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1 text-right">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h3 className="min-w-0 truncate text-sm font-semibold text-gray-800">{name}</h3>
+                      <span className="shrink-0 text-[10px] text-gray-500">
+                        {role === "DOCTOR" ? "پزشک" : thread.participant ? "کاربر" : "مهمان"}
+                      </span>
+                    </div>
+                    <p className="truncate text-xs text-gray-500">{thread.last_message || "بدون پیام"}</p>
+                  </div>
+                  {thread.unread_count > 0 && (
+                    <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[#2993A3] px-1 text-[10px] font-bold text-white">
+                      {thread.unread_count}
+                    </span>
+                  )}
+                  <DropdownMenu dir="rtl">
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
                         aria-label={`بایگانی گفتگوی ${name}`}
                         onClick={(event) => event.stopPropagation()}
-                        className="rounded-full p-2 hover:bg-gray-200"
+                        className="shrink-0 rounded-full p-2 hover:bg-gray-200"
                       >
                         <MoreVertical className="h-4 w-4" />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={(event) => void deleteThread(event, thread.id)}
-                        className="text-red-600"
-                      >
-                        <Trash2 className="ml-2 h-4 w-4" /> بایگانی گفتگو
-                      </DropdownMenuItem>
+                      <DropdownMenuGroup>
+                        <DropdownMenuItem
+                          onClick={(event) => void deleteThread(event, thread.id)}
+                          className="text-destructive"
+                        >
+                          <Trash2 /> بایگانی گفتگو
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  {thread.unread_count > 0 && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#2993A3] px-1 text-[10px] font-bold text-white">
-                      {thread.unread_count}
-                    </span>
-                  )}
-                  <div className="min-w-0 flex-1 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <span className="text-[10px] text-gray-500">
-                        {role === "DOCTOR" ? "پزشک" : thread.participant ? "کاربر" : "مهمان"}
-                      </span>
-                      <h3 className="truncate text-sm font-semibold text-gray-800">{name}</h3>
-                    </div>
-                    <p className="truncate text-xs text-gray-500">{thread.last_message || "بدون پیام"}</p>
-                  </div>
-                  <Avatar className="h-12 w-12 shrink-0">
-                    <AvatarImage src={thread.participant?.profile_picture || undefined} />
-                    <AvatarFallback>{name[0] || "؟"}</AvatarFallback>
-                  </Avatar>
                 </div>
                 <Separator />
               </div>

@@ -6,8 +6,12 @@ import Navbar from "@/components/Navbar";
 export default function ConditionalNavbar() {
   const pathname = usePathname();
 
-  // اگر کاربر در مسیر پنل ادمین (/admin) باشد، Navbar اصلا رندر نمی‌شود
-  if (pathname?.startsWith("/admin") || pathname?.startsWith("/doctor") || pathname?.startsWith("/user")) {
+  const isDashboardRoute = ["/admin", "/doctor", "/user"].some(
+    (root) => pathname === root || pathname?.startsWith(`${root}/`),
+  );
+
+  // Navbar فقط در پنل‌های خصوصی پنهان می‌شود؛ مسیر عمومی /doctors باید آن را نمایش دهد.
+  if (isDashboardRoute) {
     return null;
   }
 

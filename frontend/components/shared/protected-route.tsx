@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useDoctorContext } from '@/context/doctor-context';
+import { getRoleHomePath } from '@/lib/role-routing';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -17,6 +18,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   } = useDoctorContext();
 
   const isOnVerificationPage = pathname === '/doctor/verification';
+  const isOnProfilePage = pathname === '/doctor/edit-info';
 
   useEffect(() => {
     if (isUserLoading || (user && isVerificationLoading)) return;
@@ -29,12 +31,12 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
     // 2. Wrong Role (cross-role access guard)
     if (user.role !== 'DOCTOR') {
-      router.replace('/admin'); // Redirect admins away
+      router.replace(getRoleHomePath(user.role));
       return;
     }
 
     // 3. Verification Gate
-    if (verificationStatus !== 'APPROVED' && !isOnVerificationPage) {
+    if (verificationStatus !== 'APPROVED' && !isOnVerificationPage && !isOnProfilePage) {
       // Force them to the verification page
       router.replace('/doctor/verification');
       return;
@@ -45,7 +47,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       router.replace('/doctor/chat');
       return;
     }
-  }, [user, isUserLoading, verificationStatus, isVerificationLoading, isOnVerificationPage, router]);
+  }, [user, isUserLoading, verificationStatus, isVerificationLoading, isOnVerificationPage, isOnProfilePage, router]);
 
   // Loading States
   if (isUserLoading || (user && isVerificationLoading)) {
@@ -62,7 +64,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   // Enforce gate visually before router effect finishes
-  if (verificationStatus !== 'APPROVED' && !isOnVerificationPage) {
+  if (verificationStatus !== 'APPROVED' && !isOnVerificationPage && !isOnProfilePage) {
     return null;
   }
 

@@ -2,19 +2,22 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { MessageSquare, ShieldCheck, Pencil, LogOut, Star } from 'lucide-react';
+import { CalendarCheck, MessageSquare, ShieldCheck, Pencil, LogOut, Star } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { useDoctorContext } from '@/context/doctor-context';
 import { clearTokens } from '@/lib/auth';
+import api from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { title: 'گفت و گو ها', href: '/doctor/chat', icon: MessageSquare },
+  { title: 'نوبت‌ها', href: '/doctor/appointments', icon: CalendarCheck },
   { title: 'احراز هویت', href: '/doctor/verification', icon: ShieldCheck },
   { title: 'امتیازهای من', href: '/doctor/ratings', icon: Star },
 ];
 
-export function SidebarContent() {
+export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, verificationStatus } = useDoctorContext();
@@ -22,9 +25,14 @@ export function SidebarContent() {
   const isApproved = verificationStatus === 'APPROVED';
   const avatarSrc = user?.profile_picture && user.profile_picture.trim() !== "" ? user.profile_picture : undefined;
 
-  const handleLogout = () => {
-    clearTokens();
-    router.push('/login');
+  const handleLogout = async () => {
+    try {
+      await api.post('/auth/logout/');
+    } finally {
+      clearTokens();
+      router.replace('/login');
+      router.refresh();
+    }
   };
 
   return (
@@ -44,7 +52,13 @@ export function SidebarContent() {
             <Link
               key={item.href}
               href={isDisabled ? '#' : item.href}
-              onClick={(e) => isDisabled && e.preventDefault()}
+              onClick={(e) => {
+                if (isDisabled) {
+                  e.preventDefault();
+                  return;
+                }
+                onNavigate?.();
+              }}
               aria-disabled={isDisabled}
               className={cn(
                 'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-colors',
@@ -56,6 +70,11 @@ export function SidebarContent() {
             >
               <item.icon className="h-5 w-5" />
               <span>{item.title}</span>
+              {item.href === '/doctor/verification' && isApproved ? (
+                <Badge className="mr-auto border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700">
+                  انجام شده
+                </Badge>
+              ) : null}
             </Link>
           );
         })}
@@ -78,7 +97,7 @@ export function SidebarContent() {
               className="flex items-center gap-1 text-xs text-gray-500 hover:text-[#2993A3] mt-1 transition-colors"
             >
               <Pencil className="h-3 w-3" />
-              تغییر نام یا پروفایل
+              ویرایش اطلاعات و پروفایل عمومی
             </button>
           </div>
         </div>
@@ -86,7 +105,7 @@ export function SidebarContent() {
 
       <div className="px-2 pb-4">
         <button
-          onClick={handleLogout}
+          onClick={() => void handleLogout()}
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-100"
         >
           <LogOut className="h-4 w-4" />

@@ -259,7 +259,7 @@ def record_uploaded_part(session, *, part_number, size, etag, checksum_sha256):
     if session.state != UploadSession.State.UPLOADING:
         raise UploadError("This upload session is not accepting part records.")
     expected_size = expected_part_size(session, part_number)
-    if size != expected_size or not etag or not SHA256_RE.fullmatch(checksum_sha256):
+    if size != expected_size or not SHA256_RE.fullmatch(checksum_sha256):
         raise UploadError("Invalid uploaded-part metadata.")
     with transaction.atomic():
         manifest = UploadPart.objects.select_for_update().filter(

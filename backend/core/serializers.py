@@ -65,7 +65,10 @@ class UploadPartBatchSerializer(serializers.Serializer):
 
 class UploadedPartSerializer(UploadPartSpecSerializer):
     size = serializers.IntegerField(min_value=1)
-    etag = serializers.CharField(max_length=255, trim_whitespace=False)
+    # ETag is optional because browsers cannot read it when an S3-compatible
+    # provider omits it from Access-Control-Expose-Headers. Completion still
+    # verifies the provider's authoritative part metadata server-side.
+    etag = serializers.CharField(max_length=255, trim_whitespace=False, required=False, allow_blank=True)
 
 class SystemSettingsSerializer(serializers.ModelSerializer):
     """Serializer for the singleton SystemSettings table."""

@@ -17,5 +17,5 @@ export default function UserChatWindow({
   useEffect(() => {
     void getCurrentUser().then(setUser);
   }, []);
-  return <RoleChatWindow thread={thread} currentUser={user} onBack={onBack} />;
+  return <RoleChatWindow thread={thread} currentUser={user} canUpload onBack={onBack} />;
 }

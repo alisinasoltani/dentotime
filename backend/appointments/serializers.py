@@ -10,24 +10,26 @@ from .models import (
     AvailabilityBreak,
     AvailabilityOverride,
     ClinicSchedule,
+    DoctorAvailabilityRule,
     WeeklyAvailabilityRule,
 )
-from accounts.models import User
+from accounts.models import DentalService, Doctor, InsuranceProvider, User
 from accounts.validators import normalize_phone_number
 
 class AppointmentSlotSerializer(serializers.ModelSerializer):
     class Meta:
         model = AppointmentSlot
         fields = (
-            "id", "date", "start_at", "end_at", "status", "capacity_index",
+            "id", "doctor", "date", "start_at", "end_at", "status", "capacity_index",
             "generated_by_schedule",
         )
-        read_only_fields = ("capacity_index", "generated_by_schedule")
+        read_only_fields = ("doctor", "capacity_index", "generated_by_schedule")
 
     def validate(self, attrs):
         start_at = attrs.get("start_at", getattr(self.instance, "start_at", None))
         end_at = attrs.get("end_at", getattr(self.instance, "end_at", None))
         clinic_date = attrs.get("date", getattr(self.instance, "date", None))
+        doctor = attrs.get("doctor", getattr(self.instance, "doctor", None))
         if start_at and end_at and start_at >= end_at:
             raise serializers.ValidationError({"end_at": "end_at must be after start_at."})
         if start_at and clinic_date and start_at.astimezone(ZoneInfo("Asia/Tehran")).date() != clinic_date:
@@ -36,6 +38,7 @@ class AppointmentSlotSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"start_at": "Past slots cannot be created or moved."})
         if start_at and end_at:
             overlap = AppointmentSlot.objects.filter(
+                doctor=doctor,
                 capacity_index=getattr(self.instance, "capacity_index", 1),
                 status__in=[AppointmentSlot.Status.AVAILABLE, AppointmentSlot.Status.BOOKED],
                 start_at__lt=end_at,
@@ -61,6 +64,17 @@ class AppointmentSlotSerializer(serializers.ModelSerializer):
 
 class AppointmentCreateSerializer(serializers.Serializer):
     slot_id = serializers.IntegerField(write_only=True)
+    service_id = serializers.PrimaryKeyRelatedField(source="service", queryset=DentalService.objects.filter(is_active=True), required=False)
+    insurance_id = serializers.PrimaryKeyRelatedField(source="insurance", queryset=InsuranceProvider.objects.filter(is_active=True), required=False)
+    doctor_id = serializers.PrimaryKeyRelatedField(
+        source="doctor",
+        queryset=Doctor.objects.filter(
+            is_active=True,
+            verification_status=Doctor.VerificationStatus.APPROVED,
+        ),
+        required=False,
+        allow_null=True,
+    )
     reason = serializers.CharField(required=False, allow_blank=True, max_length=2000)
     phone_number = serializers.CharField(required=False, write_only=True)
     first_name = serializers.CharField(required=False, max_length=150, write_only=True)
@@ -90,29 +104,59 @@ class AppointmentCreateSerializer(serializers.Serializer):
 class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ("id", "first_name", "last_name", "phone_number")
+        fields = (
+            "id",
+            "first_name",
+            "last_name",
+            "phone_number",
+            "profile_picture",
+        )
+
+
+class AppointmentDoctorSerializer(serializers.ModelSerializer):
+    display_name = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = Doctor
+        fields = ("id", "first_name", "last_name", "display_name")
 
 class AppointmentListSerializer(serializers.ModelSerializer):
     slot = AppointmentSlotSerializer(read_only=True)
     patient = PatientSerializer(read_only=True)
+    doctor = AppointmentDoctorSerializer(read_only=True)
     can_cancel = serializers.SerializerMethodField()
 
     class Meta:
         model = Appointment
         fields = (
-            "id", "patient", "contact_phone_number", "contact_first_name",
-            "contact_last_name", "slot", "status", "reason",
-            "created_at", "approved_at", "cancelled_at", "can_cancel", "admin_notes"
+            "id", "patient", "doctor", "contact_phone_number", "contact_first_name",
+            "contact_last_name", "slot", "status", "reason", "service", "insurance",
+            "attendance_status", "attendance_confirmed_at", "created_at",
+            "approved_at", "cancelled_at", "can_cancel", "admin_notes"
         )
 
     def get_can_cancel(self, obj):
         request = self.context.get("request")
         if request and obj.patient_id and request.user == obj.patient:
             return obj.can_be_cancelled_by_user()
+        if (
+            request
+            and request.user.is_authenticated
+            and request.user.is_doctor_role
+            and obj.doctor_id == request.user.pk
+        ):
+            return obj.status in {
+                Appointment.Status.PENDING,
+                Appointment.Status.APPROVED,
+            }
         return False
 
 class AppointmentCancelSerializer(serializers.Serializer):
     cancellation_reason = serializers.CharField(required=False, allow_blank=True)
+
+
+class AppointmentAttendanceSerializer(serializers.Serializer):
+    attended = serializers.BooleanField()
 
 class AdminAppointmentUpdateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -251,3 +295,55 @@ class AvailabilityOverrideSerializer(serializers.ModelSerializer):
 class AvailabilityGenerationSerializer(serializers.Serializer):
     start_date = serializers.DateField()
     end_date = serializers.DateField()
+
+
+class DoctorAvailabilityRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DoctorAvailabilityRule
+        fields = (
+            "id",
+            "weekday",
+            "start_time",
+            "end_time",
+            "slot_duration_minutes",
+            "starts_on",
+            "ends_on",
+            "is_active",
+        )
+        read_only_fields = fields
+
+
+class DoctorAvailabilityGenerateSerializer(serializers.Serializer):
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    weekdays = serializers.ListField(
+        child=serializers.IntegerField(min_value=0, max_value=6),
+        min_length=1,
+        max_length=7,
+    )
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField()
+    slot_duration_minutes = serializers.IntegerField(min_value=5, max_value=480)
+    save_as_routine = serializers.BooleanField(default=True)
+
+    def validate_weekdays(self, value):
+        if len(value) != len(set(value)):
+            raise serializers.ValidationError("Weekdays must not contain duplicates.")
+        return sorted(value)
+
+    def validate(self, attrs):
+        if attrs["start_date"] > attrs["end_date"]:
+            raise serializers.ValidationError(
+                {"end_date": "end_date must be on or after start_date."}
+            )
+        if attrs["start_time"] >= attrs["end_time"]:
+            raise serializers.ValidationError(
+                {"end_time": "end_time must be after start_time."}
+            )
+        start_minutes = attrs["start_time"].hour * 60 + attrs["start_time"].minute
+        end_minutes = attrs["end_time"].hour * 60 + attrs["end_time"].minute
+        if end_minutes - start_minutes < attrs["slot_duration_minutes"]:
+            raise serializers.ValidationError(
+                {"slot_duration_minutes": "The interval must contain at least one slot."}
+            )
+        return attrs

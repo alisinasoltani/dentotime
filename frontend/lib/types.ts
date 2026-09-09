@@ -12,6 +12,7 @@ export interface User {
   phone_number?: string;
   role: UserRole;
   profile_picture?: string | null; // Made optional
+  specialty?: string;
   verification_status?: VerificationStatus;
 }
 
@@ -23,7 +24,7 @@ export interface AuthResponse {
 
 export interface ChatThread {
   id: string;
-  thread_type: 'USER_ADMIN' | 'DOCTOR_ADMIN';
+  thread_type: 'USER_ADMIN' | 'DOCTOR_ADMIN' | 'DIRECT';
   participant: User | null;
   guest_contact: {
     phone_number: string;
@@ -36,6 +37,45 @@ export interface ChatThread {
   last_message: string;
   last_message_at: string | null;
   created_at: string;
+}
+
+export interface ChatContact extends Omit<User, 'role'> {
+  role: UserRole | 'SUPPORT';
+  specialty: string;
+  is_pinned: boolean;
+  can_unpin: boolean;
+}
+
+export interface ChatContactDirectory {
+  support: ChatContact;
+  pinned: ChatContact[];
+  results: ChatContact[];
+  pin_count: number;
+  pin_limit: number;
+  can_pin?: boolean;
+}
+
+export interface AdminConversationParticipant {
+  id: number | null;
+  first_name: string;
+  last_name: string;
+  role: UserRole | "GUEST";
+  phone_number?: string;
+}
+
+export interface AdminConversationHistoryThread {
+  id: string;
+  thread_type: ChatThread["thread_type"];
+  status: ChatThread["status"];
+  created_at: string;
+  last_message_at: string | null;
+  last_message: string;
+  message_count: number;
+  participants: AdminConversationParticipant[];
+}
+
+export interface AdminConversationHistoryDetail extends AdminConversationHistoryThread {
+  messages: ChatMessage[];
 }
 
 export interface ChatMessage {
@@ -79,6 +119,13 @@ export interface DoctorRequest {
 
 export interface Appointment {
   id: string;
+  patient?: {
+    id?: string | number;
+    first_name?: string;
+    last_name?: string;
+    phone_number?: string;
+    profile_picture?: string | null;
+  } | null;
   user?: {
     first_name?: string;
     last_name?: string;
@@ -87,13 +134,58 @@ export interface Appointment {
   date?: string;
   start_at?: string;
   slot?: {
+    id?: number;
+    doctor?: number | null;
     date?: string;
     start_at?: string;
+    end_at?: string;
   };
-  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  contact_phone_number?: string;
+  contact_first_name?: string;
+  contact_last_name?: string;
+  doctor?: {
+    id: string | number;
+    first_name: string;
+    last_name: string;
+    display_name: string;
+  } | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "COMPLETED" | "NO_SHOW";
+  attendance_status: "NOT_CONFIRMED" | "ATTENDED" | "DID_NOT_ATTEND";
+  attendance_confirmed_at?: string | null;
   reason?: string;
   admin_notes?: string;
   created_at?: string;
+  can_cancel?: boolean;
+}
+
+export interface DoctorCalendarDay {
+  date: string;
+  total: number;
+  pending: number;
+  approved: number;
+  cancelled: number;
+}
+
+export interface DoctorAvailabilitySlot {
+  id: number;
+  doctor: number;
+  date: string;
+  start_at: string;
+  end_at: string;
+  status: 'AVAILABLE' | 'BOOKED' | 'BLOCKED';
+  capacity_index: number;
+  generated_by_schedule: boolean;
+}
+
+export interface DoctorAvailabilityRule {
+  id: number;
+  weekday: number;
+  start_time: string;
+  end_time: string;
+  slot_duration_minutes: number;
+  starts_on: string;
+  ends_on: string;
+  is_active: boolean;
 }
 
 export const getAppointmentDate = (appt: any): Date | null => {
@@ -282,13 +374,20 @@ export interface ApiErrorResponse {
 }
 
 export interface PublicDoctor {
-  id: string;
+  id: string | number;
+  slug: string;
   first_name: string;
   last_name: string;
-  display_name?: string;
+  display_name: string;
   profile_picture?: string | null;
-  specialty?: string;
+  specialty: string;
   clinic_name?: string;
+  bio: string;
+  experience: string;
+  address: string;
+  map_url: string;
+  services: DentalService[];
+  insurances: InsuranceProvider[];
   likes_count: number;
   is_liked?: boolean;
   average_rating: number;
@@ -299,14 +398,101 @@ export interface Review {
   id: string;
   reviewer_display_name: string;
   rating: number;
+  answers: ReviewAnswer[];
   comment: string;
   created_at: string;
   updated_at: string;
 }
 
-export interface DoctorDetail extends PublicDoctor {
-  bio?: string;
+export interface DentalService {
+  id: number;
+  slug: string;
+  title: string;
+  short_title: string;
+  description: string;
+  icon: string;
+  position: number;
 }
+
+export interface InsuranceProvider {
+  id: number;
+  name: string;
+  position: number;
+}
+
+export interface PublicCatalog {
+  services: DentalService[];
+  insurances: InsuranceProvider[];
+}
+
+export type RatingInputType = "STAR" | "RECOMMENDATION" | "WAIT_TIME";
+
+export interface RatingOption {
+  value: number;
+  label: string;
+}
+
+export interface RatingParameter {
+  id: number;
+  key: string;
+  label: string;
+  prompt: string;
+  input_type: RatingInputType;
+  options: RatingOption[];
+  position: number;
+  is_active?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  average?: number | null;
+  answer_count?: number;
+}
+
+export interface ReviewAnswer {
+  parameter_id: number;
+  key: string;
+  label: string;
+  input_type: RatingInputType;
+  value: number;
+  option_label: string;
+}
+
+export interface DoctorRatingSummary {
+  average_rating: number;
+  vote_count: number;
+  recommendation_percentage: number;
+  recommendation_count: number;
+  average_wait_time: RatingOption | null;
+  parameters: RatingParameter[];
+}
+
+export type ReviewEligibilityState =
+  | "AUTH_REQUIRED"
+  | "NO_APPOINTMENT"
+  | "UPCOMING_APPOINTMENT"
+  | "VISIT_CONFIRMATION_REQUIRED"
+  | "ELIGIBLE";
+
+export interface ReviewEligibility {
+  state: ReviewEligibilityState;
+  qualifying_appointment_id?: string;
+  existing_review?: Review | null;
+}
+
+export interface DoctorReviewSubmission {
+  answers: Array<{ parameter_id: number; value: number }>;
+  comment: string;
+}
+
+export type DoctorDetail = PublicDoctor & {
+  education: string;
+  clinical_history: string;
+  certifications: string;
+};
+
+export type DoctorPublicProfile = Pick<DoctorDetail,
+  "specialty" | "bio" | "experience" | "clinic_name" | "address" | "map_url" |
+  "education" | "clinical_history" | "certifications"
+> & { services: number[]; insurances: number[] };
 
 export interface PaginatedResponse<T> {
   count: number;
@@ -323,6 +509,7 @@ export interface RatingVoter {
     last_name: string;
   };
   rating: number;
+  answers: ReviewAnswer[];
   comment: string;
   created_at: string;
   updated_at: string;

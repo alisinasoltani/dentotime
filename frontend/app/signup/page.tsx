@@ -28,6 +28,32 @@ export default function SignupPage() {
 
   const formatPhone = (p: string) => p.startsWith("09") ? "+98" + p.substring(1) : p;
 
+  const flattenError = (value: unknown): string[] => {
+    if (typeof value === 'string') return [value];
+    if (Array.isArray(value)) return value.flatMap(flattenError);
+    if (value && typeof value === 'object') {
+      return Object.values(value).flatMap(flattenError);
+    }
+    return [];
+  };
+
+  const readableSignupError = (errorData: unknown): string => {
+    const message = flattenError(errorData)[0] || '';
+    const messages: Record<string, string> = {
+      'An account with this phone number already exists. Please sign in instead.': 'این شماره قبلاً ثبت‌نام شده است؛ لطفاً وارد حساب خود شوید.',
+      'The verification code is invalid or expired.': 'کد تأیید نامعتبر یا منقضی شده است؛ دوباره کد دریافت کنید.',
+      'Verify the one-time password before creating your account.': 'ابتدا کد تأیید پیامکی را وارد و تأیید کنید.',
+      'Passwords do not match.': 'رمز عبور و تکرار آن یکسان نیستند.',
+      'Phone number is required.': 'شماره همراه الزامی است.',
+      'First name is required.': 'نام الزامی است.',
+      'Last name is required.': 'نام خانوادگی الزامی است.',
+      'Password is required.': 'رمز عبور الزامی است.',
+      'Password confirmation is required.': 'تکرار رمز عبور الزامی است.',
+      'We could not create the account because of a database conflict. Please try again.': 'ثبت حساب با مشکل موقت مواجه شد؛ چند لحظه بعد دوباره تلاش کنید.',
+    };
+    return messages[message] || message || 'اطلاعات واردشده معتبر نیست؛ لطفاً موارد مشخص‌شده را بررسی کنید.';
+  };
+
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true); setError(null);
@@ -41,7 +67,7 @@ export default function SignupPage() {
       setStep(2);
     } catch (err: any) { 
       const errorData = err.response?.data;
-      setError(errorData?.detail || "خطا در ارسال کد."); 
+      setError(readableSignupError(errorData));
     }
     finally { setLoading(false); }
   };
@@ -71,7 +97,7 @@ export default function SignupPage() {
       setChallengeId(response.data.challenge_id);
       toast.success("کد جدید ارسال شد.");
     } catch (err: any) {
-      toast.error("خطا در ارسال مجدد کد.");
+      toast.error(readableSignupError(err.response?.data));
     }
   };
 
@@ -103,15 +129,7 @@ export default function SignupPage() {
       }
     } catch (err: any) {
       const errorData = err.response?.data;
-      let errorMessage = "خطا در ثبت‌نام.";
-      if (errorData) {
-        if (errorData.detail) {
-          errorMessage = errorData.detail;
-        } else {
-          errorMessage = Object.values(errorData).flat().join(" ");
-        }
-      }
-      setError(errorMessage);
+      setError(readableSignupError(errorData));
     } finally {
       setLoading(false);
     }
@@ -135,7 +153,7 @@ export default function SignupPage() {
 
         <div className="flex items-center justify-center gap-3">
           <h1 className="text-md md:text-xl font-bold text-slate-800">ساخت حساب کاربری</h1>
-          <Image src={"/images/logo.png"} width={40} height={40} alt="" />
+            <Image src={"/images/logo.png"} width={55} height={48} alt="" />
         </div>
 
                 

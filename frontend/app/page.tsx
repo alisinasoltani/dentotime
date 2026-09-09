@@ -5,17 +5,22 @@ import Hero from "@/components/Hero";
 import PioneeringTechnologies from "@/components/PioneeringTechnologies";
 import Services from "@/components/Services";
 import DoctorsPreview from "@/components/home/DoctorsPreview";
+import { getServerDoctorPreview, getServerPublicCatalog } from "@/lib/server-public-doctors";
 
-export default function Home() {
+export default async function Home() {
+  const [doctors, catalog] = await Promise.all([
+    getServerDoctorPreview(),
+    getServerPublicCatalog(),
+  ]);
   return (
     <div>
       <main>
         <Hero />
-        <Services />
-        <BookingSection />
+        <Services services={catalog.services} />
+        <DoctorsPreview doctors={doctors} insurances={catalog.insurances} />
+        <BookingSection services={catalog.services} insurances={catalog.insurances} />
         <PioneeringTechnologies />
         <FeaturesSection />
-        <DoctorsPreview />
         <Footer />
       </main>
     </div>

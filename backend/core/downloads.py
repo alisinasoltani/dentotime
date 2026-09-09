@@ -14,7 +14,15 @@ def _can_download(user, asset):
     if user.is_admin_role or asset.owner_id == user.pk:
         return True
     if asset.purpose == FileAsset.Purpose.CHAT_ATTACHMENT:
-        return asset.scope_thread_id is not None and asset.scope_thread.participant_id == user.pk
+        if asset.scope_thread_id is None:
+            return False
+        thread = asset.scope_thread
+        if thread.thread_type == thread.ThreadType.DIRECT:
+            return user.pk in {
+                thread.direct_participant_one_id,
+                thread.direct_participant_two_id,
+            }
+        return thread.participant_id == user.pk
     if asset.purpose == FileAsset.Purpose.VERIFICATION_DOCUMENT:
         return asset.scope_doctor_id == user.pk
     return False

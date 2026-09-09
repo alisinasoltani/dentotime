@@ -23,17 +23,28 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import User
+from accounts.models import Doctor, User
 from accounts.permissions import IsAdminRole
 from core.sms_service import queue_new_message
-from messaging.models import Message, MessageAttachment, MessageThread, ThreadReadState
+from messaging.models import (
+    Message,
+    MessageAttachment,
+    MessageThread,
+    PinnedChatContact,
+    ThreadReadState,
+)
 from messaging.permissions import CanCreateOwnThread, IsParticipantOrAdmin
 from messaging.realtime import publish_message_event
 from messaging.serializers import (
     AdminThreadUpdateSerializer,
+    AdminConversationHistoryDetailSerializer,
+    AdminConversationHistorySerializer,
+    ChatContactSerializer,
+    DirectThreadCreateSerializer,
     GuestMessageSerializer,
     MessageCreateSerializer,
     MessageSerializer,
+    PinnedContactWriteSerializer,
     ThreadListSerializer,
 )
 
@@ -66,14 +77,30 @@ def _message_queryset(*, thread, user):
     )
 
 
-def _get_visible_thread(*, user, thread_id, for_update=False):
+def _visible_thread_queryset(user):
     queryset = MessageThread.objects.filter(deleted_at__isnull=True).select_related(
-        "participant"
+        "participant",
+        "participant__doctor",
+        "assigned_admin",
+        "assigned_admin__doctor",
+        "direct_participant_one",
+        "direct_participant_one__doctor",
+        "direct_participant_two",
+        "direct_participant_two__doctor",
     )
+    if user.is_admin_role:
+        return queryset.exclude(thread_type=MessageThread.ThreadType.DIRECT)
+    return queryset.filter(
+        Q(participant_id=user.pk)
+        | Q(direct_participant_one_id=user.pk)
+        | Q(direct_participant_two_id=user.pk)
+    )
+
+
+def _get_visible_thread(*, user, thread_id, for_update=False):
+    queryset = _visible_thread_queryset(user)
     if for_update:
         queryset = queryset.select_for_update(of=("self",))
-    if not user.is_admin_role:
-        queryset = queryset.filter(participant_id=user.pk)
     return get_object_or_404(queryset, pk=thread_id)
 
 
@@ -81,7 +108,10 @@ def _queue_notifications(*, sender, thread, visibility):
     if visibility != Message.Visibility.PARTICIPANTS:
         return
     time_str = timezone.localtime().strftime("%H:%M")
-    if sender.is_admin_role:
+    if thread.thread_type == MessageThread.ThreadType.DIRECT:
+        counterpart = thread.direct_counterpart(sender)
+        phones = [counterpart.phone_number] if counterpart else []
+    elif sender.is_admin_role:
         phones = [thread.participant.phone_number] if thread.participant_id else []
     else:
         phones = list(
@@ -102,9 +132,7 @@ class ThreadListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        queryset = MessageThread.objects.filter(deleted_at__isnull=True).select_related(
-            "participant", "assigned_admin"
-        )
+        queryset = _visible_thread_queryset(user)
         if user.is_admin_role:
             search = self.request.query_params.get("search", "").strip()
             if search:
@@ -116,9 +144,6 @@ class ThreadListView(generics.ListAPIView):
                     | Q(guest_last_name__icontains=search)
                     | Q(guest_phone__icontains=search)
                 )
-        else:
-            queryset = queryset.filter(participant=user)
-
         read_at = ThreadReadState.objects.filter(
             thread_id=OuterRef("pk"), user=user
         ).values("last_read_at")[:1]
@@ -181,7 +206,170 @@ class ThreadGetOrCreateView(APIView):
         thread.unread_count = 0
         thread._last_message = ""
         return Response(
-            ThreadListSerializer(thread).data,
+            ThreadListSerializer(thread, context={"request": request}).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class ChatContactListView(APIView):
+    permission_classes = (CanCreateOwnThread,)
+
+    def get(self, request):
+        query = request.query_params.get("search", "").strip()[:100]
+        role = request.query_params.get("role", "ALL").strip().upper()
+        if role not in {"ALL", User.Role.USER, User.Role.DOCTOR}:
+            raise ValidationError({"role": "Choose ALL, USER, or DOCTOR."})
+
+        can_pin = request.user.is_doctor_role
+        pinned_rows = []
+        if can_pin:
+            owner = request.user.doctor_profile
+            pinned_rows = list(
+                PinnedChatContact.objects.filter(owner=owner)
+                .select_related("contact", "contact__doctor")
+                .order_by("created_at", "pk")
+            )
+        pinned_ids = {row.contact_id for row in pinned_rows}
+        contacts = User.objects.filter(
+            is_active=True,
+            role__in=(User.Role.USER, User.Role.DOCTOR),
+        ).exclude(pk=request.user.pk)
+        if role != "ALL":
+            contacts = contacts.filter(role=role)
+        if query:
+            contacts = contacts.filter(
+                Q(first_name__icontains=query)
+                | Q(last_name__icontains=query)
+                | Q(phone_number__icontains=query)
+                | Q(doctor__specialty__icontains=query)
+            )
+        contacts = contacts.filter(
+            Q(role=User.Role.USER)
+            | Q(
+                role=User.Role.DOCTOR,
+                doctor__verification_status=Doctor.VerificationStatus.APPROVED,
+            )
+        ).select_related("doctor").order_by("first_name", "last_name", "pk")[:50]
+
+        serializer_context = {
+            "request": request,
+            "pinned_ids": pinned_ids,
+        }
+        return Response(
+            {
+                "support": {
+                    "id": "support",
+                    "first_name": "پشتیبانی",
+                    "last_name": "دنتوتایم",
+                    "role": "SUPPORT",
+                    "phone_number": "",
+                    "profile_picture": None,
+                    "specialty": "",
+                    "is_pinned": True,
+                    "can_unpin": False,
+                },
+                "pinned": ChatContactSerializer(
+                    [row.contact for row in pinned_rows],
+                    many=True,
+                    context=serializer_context,
+                ).data,
+                "results": ChatContactSerializer(
+                    contacts,
+                    many=True,
+                    context=serializer_context,
+                ).data,
+                "pin_count": len(pinned_rows),
+                "pin_limit": 5,
+                "can_pin": can_pin,
+            }
+        )
+
+
+class PinnedChatContactView(APIView):
+    permission_classes = (CanCreateOwnThread,)
+
+    @transaction.atomic
+    def post(self, request):
+        if not request.user.is_doctor_role:
+            raise PermissionDenied("Only doctors can pin conversation contacts.")
+        serializer = PinnedContactWriteSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        contact = serializer.validated_data["contact"]
+        if contact.is_doctor_role and not Doctor.objects.filter(
+            pk=contact.pk,
+            verification_status=Doctor.VerificationStatus.APPROVED,
+        ).exists():
+            raise ValidationError({"contact_id": "This doctor is not available for chat."})
+
+        owner = Doctor.objects.select_for_update().get(pk=request.user.pk)
+        existing = PinnedChatContact.objects.filter(
+            owner=owner,
+            contact=contact,
+        ).first()
+        if existing:
+            return Response({"detail": "Contact is already pinned."})
+        if PinnedChatContact.objects.filter(owner=owner).count() >= 5:
+            return Response(
+                {"detail": "حداکثر ۵ مخاطب را می‌توانید پین کنید."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        pin = PinnedChatContact(owner=owner, contact=contact)
+        pin.full_clean()
+        pin.save()
+        return Response(
+            ChatContactSerializer(
+                contact,
+                context={"request": request, "pinned_ids": {contact.pk}},
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @transaction.atomic
+    def delete(self, request, contact_id):
+        if not request.user.is_doctor_role:
+            raise PermissionDenied("Only doctors can unpin conversation contacts.")
+        owner = Doctor.objects.select_for_update().get(pk=request.user.pk)
+        deleted, _ = PinnedChatContact.objects.filter(
+            owner=owner,
+            contact_id=contact_id,
+        ).delete()
+        if not deleted:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class DirectThreadCreateView(APIView):
+    permission_classes = (CanCreateOwnThread,)
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = DirectThreadCreateSerializer(
+            data=request.data,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        contact = serializer.validated_data["contact"]
+        if contact.is_doctor_role and not Doctor.objects.filter(
+            pk=contact.pk,
+            verification_status=Doctor.VerificationStatus.APPROVED,
+        ).exists():
+            raise ValidationError({"contact_id": "This doctor is not available for chat."})
+
+        first_id, second_id = sorted((request.user.pk, contact.pk))
+        thread, created = MessageThread.objects.get_or_create(
+            direct_participant_one_id=first_id,
+            direct_participant_two_id=second_id,
+            thread_type=MessageThread.ThreadType.DIRECT,
+            status=MessageThread.Status.OPEN,
+            deleted_at=None,
+        )
+        thread.unread_count = 0
+        thread._last_message = ""
+        return Response(
+            ThreadListSerializer(thread, context={"request": request}).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
@@ -302,9 +490,7 @@ class ThreadMarkReadView(APIView):
 
     @transaction.atomic
     def patch(self, request, pk):
-        queryset = MessageThread.objects.filter(deleted_at__isnull=True).select_for_update()
-        if not request.user.is_admin_role:
-            queryset = queryset.filter(participant_id=request.user.id)
+        queryset = _visible_thread_queryset(request.user).select_for_update(of=("self",))
         thread = get_object_or_404(queryset, pk=pk)
         now = timezone.now()
         ThreadReadState.objects.update_or_create(
@@ -316,7 +502,9 @@ class ThreadMarkReadView(APIView):
 
 
 class AdminThreadUpdateView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = MessageThread.objects.select_related("participant", "assigned_admin")
+    queryset = MessageThread.objects.exclude(
+        thread_type=MessageThread.ThreadType.DIRECT
+    ).select_related("participant", "assigned_admin")
     serializer_class = AdminThreadUpdateSerializer
     permission_classes = (IsAdminRole,)
 
@@ -330,6 +518,103 @@ class AdminThreadUpdateView(generics.RetrieveUpdateDestroyAPIView):
             thread.save(
                 update_fields=("deleted_at", "deleted_by", "status", "updated_at")
             )
+
+
+class AdminConversationHistoryListView(generics.ListAPIView):
+    """Read-only archive of every conversation, including direct patient/doctor chats."""
+
+    serializer_class = AdminConversationHistorySerializer
+    permission_classes = (IsAdminRole,)
+
+    def get_queryset(self):
+        search = self.request.query_params.get("search", "").strip()[:100]
+        visible_messages = Message.objects.filter(thread_id=OuterRef("pk"), is_deleted=False)
+        last_message = visible_messages.order_by("-created_at", "-id").values("body")[:1]
+        queryset = (
+            MessageThread.objects.all()
+            .select_related(
+                "participant",
+                "participant__doctor",
+                "assigned_admin",
+                "direct_participant_one",
+                "direct_participant_one__doctor",
+                "direct_participant_two",
+                "direct_participant_two__doctor",
+            )
+            .annotate(
+                message_count=Count("messages", filter=Q(messages__is_deleted=False)),
+                _last_message=Coalesce(
+                    Subquery(last_message, output_field=TextField()),
+                    Value(""),
+                    output_field=TextField(),
+                ),
+            )
+            .order_by("-last_message_at", "-created_at", "-id")
+        )
+        if search:
+            queryset = queryset.filter(
+                Q(participant__first_name__icontains=search)
+                | Q(participant__last_name__icontains=search)
+                | Q(participant__phone_number__icontains=search)
+                | Q(assigned_admin__first_name__icontains=search)
+                | Q(assigned_admin__last_name__icontains=search)
+                | Q(direct_participant_one__first_name__icontains=search)
+                | Q(direct_participant_one__last_name__icontains=search)
+                | Q(direct_participant_one__phone_number__icontains=search)
+                | Q(direct_participant_two__first_name__icontains=search)
+                | Q(direct_participant_two__last_name__icontains=search)
+                | Q(direct_participant_two__phone_number__icontains=search)
+                | Q(guest_first_name__icontains=search)
+                | Q(guest_last_name__icontains=search)
+                | Q(guest_phone__icontains=search)
+            )
+        return queryset
+
+
+class AdminConversationHistoryDetailView(generics.RetrieveAPIView):
+    serializer_class = AdminConversationHistoryDetailSerializer
+    permission_classes = (IsAdminRole,)
+    queryset = (
+        MessageThread.objects.all()
+        .select_related(
+            "participant",
+            "participant__doctor",
+            "assigned_admin",
+            "direct_participant_one",
+            "direct_participant_one__doctor",
+            "direct_participant_two",
+            "direct_participant_two__doctor",
+        )
+        .annotate(
+            message_count=Count("messages", filter=Q(messages__is_deleted=False)),
+            _last_message=Coalesce(
+                Subquery(
+                    Message.objects.filter(thread_id=OuterRef("pk"), is_deleted=False)
+                    .order_by("-created_at", "-id")
+                    .values("body")[:1],
+                    output_field=TextField(),
+                ),
+                Value(""),
+                output_field=TextField(),
+            ),
+        )
+        .prefetch_related(
+            Prefetch(
+                "messages",
+                queryset=Message.objects.filter(is_deleted=False)
+                .select_related("sender")
+                .prefetch_related(
+                    Prefetch(
+                        "attachments",
+                        queryset=MessageAttachment.objects.filter(is_deleted=False).select_related(
+                            "asset"
+                        ),
+                    )
+                )
+                .order_by("created_at", "id"),
+            )
+        )
+    )
 
 
 class GuestMessageView(APIView):

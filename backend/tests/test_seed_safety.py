@@ -28,7 +28,7 @@ def test_populate_db_refuses_production(monkeypatch):
     monkeypatch.setenv("ALLOW_DESTRUCTIVE_SEEDING", "true")
     monkeypatch.setenv("SEED_USER_PASSWORD", "development-only-password")
 
-    with pytest.raises(CommandError, match="disabled outside"):
+    with pytest.raises(CommandError, match="retired; no data was changed"):
         call_command("populate_db", confirm_destructive=True)
 
 
@@ -38,9 +38,35 @@ def test_populate_db_requires_all_explicit_safety_gates(monkeypatch):
     monkeypatch.delenv("ALLOW_DESTRUCTIVE_SEEDING", raising=False)
     monkeypatch.setenv("SEED_USER_PASSWORD", "development-only-password")
 
-    with pytest.raises(CommandError, match="ALLOW_DESTRUCTIVE_SEEDING"):
+    with pytest.raises(CommandError, match="retired; no data was changed"):
         call_command("populate_db", confirm_destructive=True)
 
     monkeypatch.setenv("ALLOW_DESTRUCTIVE_SEEDING", "true")
-    with pytest.raises(CommandError, match="--confirm-destructive"):
+    with pytest.raises(CommandError, match="retired; no data was changed"):
         call_command("populate_db", confirm_destructive=False)
+
+
+@pytest.mark.django_db
+def test_normal_migrations_create_reference_data_without_fictional_people():
+    from accounts.models import DentalService, InsuranceProvider, RatingParameter
+    from appointments.models import Appointment
+
+    assert not User.objects.exists()
+    assert not Appointment.objects.exists()
+    assert DentalService.objects.count() == 12
+    assert InsuranceProvider.objects.count() == 12
+    assert RatingParameter.objects.filter(is_active=True).count() == 7
+
+
+@pytest.mark.django_db
+def test_release_gate_reports_sample_identity_without_deleting(normal_user):
+    normal_user.username = "demo-user-marker"
+    normal_user.save()
+    with pytest.raises(CommandError, match="Production promotion blocked"):
+        call_command("check_demo_data")
+    assert User.objects.filter(pk=normal_user.pk).exists()
+
+
+@pytest.mark.django_db
+def test_release_gate_allows_clean_database():
+    call_command("check_demo_data")
