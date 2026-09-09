@@ -435,20 +435,6 @@ Set-Location 'D:\GitHub\dentotime\backend'
 
 Expected result: no output; the prompt becomes `PS D:\GitHub\dentotime\backend>`.
 
-Validate the demo configuration:
-
-```powershell
-docker compose -p dentotime-demo -f docker-compose.demo.yml config --quiet
-if ($LASTEXITCODE -ne 0) { throw 'Demo Compose configuration is invalid.' }
-Write-Output 'Demo Compose configuration is valid.'
-```
-
-Expected output:
-
-```text
-Demo Compose configuration is valid.
-```
-
 No `.env`, `.env.server`, API key, host Python installation, or host npm install
 is needed for this demo. Do not copy a production environment file into it.
 

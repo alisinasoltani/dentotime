@@ -1,11 +1,81 @@
 # Dentotime scenario demo
 
-This is a separate local installation of the real application. PostgreSQL, MinIO,
+This is a separate demo installation of the real application. PostgreSQL, MinIO,
 Redis, API and frontend belong to the `dentotime-demo` Compose project. It does not
-read `.env.server` or use the existing `dentotime-review` volumes. All published
-ports bind to loopback. Do not expose this setup publicly: its credentials are public.
+read `.env.server` or use the existing `dentotime-review` volumes. The default
+configuration binds ports to loopback. For direct public-IP access, use the
+[explicit public deployment](#public-demo-on-ubuntu-no-ssh-tunnel) below; do not
+publish the local configuration's known signing/storage keys.
+
+## Public demo on Ubuntu (no SSH tunnel)
+
+From `~/dentotime/backend` on the Ubuntu server, after copying/pulling the new
+`docker-compose.demo-public.yml` and `scripts/start-public-demo.sh` files:
+
+```bash
+sudo bash scripts/start-public-demo.sh 37.32.37.248
+```
+
+Replace the IP only if your server has a different address. Bash, OpenSSL, Docker
+Engine and Docker Compose 2.24.4 or newer are required. The overlay uses
+[`!override`](https://docs.docker.com/reference/compose-file/merge/#replace-value)
+to replace loopback port mappings, rather than adding conflicting bindings.
+
+The launcher generates `.env.demo-public` with private, independent signing and
+storage keys (mode `600`), then validates, builds and starts the **same dedicated
+`dentotime-demo` project**. Re-running it preserves those keys and the demo
+database/uploads. It neither reads `.env.server` nor resets any volume. A failed
+build leaves the running containers in place. The first switch from local to
+public invalidates old sessions/presigned URLs; log in again and retry unfinished
+uploads. Keep `.env.demo-public` private and backed up with the demo; never commit it.
+
+After startup, open **<http://37.32.37.248:3100/login> directly from any computer**.
+No Windows command, localhost URL or SSH tunnel is required. The initial admin
+login is `09120001001` / `DentoDemo2026!`; all roles are listed below.
+
+Expected output includes healthy frontend/backend containers and successful
+one-time setup containers. Verify on the server:
+
+```bash
+sudo docker compose --env-file .env.demo-public -p dentotime-demo -f docker-compose.demo.yml -f docker-compose.demo-public.yml port frontend 3000
+curl -fsS http://127.0.0.1:3100/api/v1/health/
+```
+
+The port command must print `0.0.0.0:3100`, not `127.0.0.1:3100`.
+Allow inbound **TCP 3100 and 19000** in the hosting provider's network firewall.
+Port 19000 serves signed file uploads/downloads; login working does not prove that
+uploads work. Keep PostgreSQL, Redis, backend port 18000 and MinIO console 19001
+private. Docker-published ports can bypass UFW rules; do not rely on UFW alone to
+restrict access. See [Docker's firewall documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/#docker-and-ufw).
+
+This is an intentionally **public, mutable, synthetic-data HTTP demo**, not a
+production configuration. Anyone knowing the published accounts can use demo
+admin functions and alter/delete demo records. HTTP does not encrypt traffic;
+do not enter real patient information, personal passwords or production secrets.
+SMS remains captured locally and the scanner remains a test scanner, not malware
+protection. For long-lived or restricted demonstrations, add HTTPS and an access
+gate; stop the public demo when it is not needed.
+
+Always use the public launcher (or **both** Compose files and `.env.demo-public`)
+for later updates. Running the local-only command again switches origins and
+signing/storage keys back to the local defaults.
+
+Stop public access without deleting demo data:
+
+```bash
+sudo docker compose --env-file .env.demo-public -p dentotime-demo -f docker-compose.demo.yml -f docker-compose.demo-public.yml stop
+```
+
+To deliberately reset a public demo, use the same explicit command with
+`down --volumes`, then rerun the launcher. **This deletes all demo database and
+upload data.** A reset is not required to make an existing demo public.
 
 ## Start, preserve, reset
+
+The commands in this section are for a **local-only/private** demo. Public server
+deployments must use the launcher above instead.
+
+### Windows PowerShell
 
 From `D:\GitHub\dentotime\backend` in PowerShell:
 
@@ -42,11 +112,68 @@ Stop and retain the demo data:
 .\scripts\Start-Demo.ps1 -Stop
 ```
 
-Equivalent startup for other shells, from `backend/`:
+### Ubuntu / Bash (private demo)
 
-```sh
-docker compose -p dentotime-demo -f docker-compose.demo.yml up -d --build
+Run these commands from the repository's `backend/` directory (for example,
+`~/dentotime/backend`). Do not run `.\scripts\Start-Demo.ps1` in Bash: `.ps1`
+is a PowerShell script, not a Linux shell script. No PowerShell installation is
+needed; use Docker Compose directly. Omit `sudo` if your user already has Docker
+access. The parallel limit keeps builds sequential on a small server.
+
+Start or update the demo, preserving existing presentation data:
+
+```bash
+sudo docker compose -p dentotime-demo -f docker-compose.demo.yml config --quiet
+sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose -p dentotime-demo -f docker-compose.demo.yml up -d --build --wait --wait-timeout 180
+sudo docker compose -p dentotime-demo -f docker-compose.demo.yml ps -a
+sudo docker compose -p dentotime-demo -f docker-compose.demo.yml logs --no-color --tail=100 demo-setup
 ```
+
+`config --quiet` succeeds without output. `demo-setup` runs migrations and
+`seed_demo` automatically, then exits with code 0. Its logs show either
+`Demo scenarios created.` or `Demo already initialized; presentation changes preserved.`
+The API/frontend must be healthy before opening the site. No separate
+`seed_rating_demo` command is needed or supported. If startup fails, inspect
+`demo-setup` and `backend` logs; a reset is not a general repair step.
+
+Stop without deleting any demo data:
+
+```bash
+sudo docker compose -p dentotime-demo -f docker-compose.demo.yml stop
+```
+
+**Optional reset: this permanently deletes this demo's database, uploaded files
+and presentation changes.** Use it only when you want a fresh baseline. Keep both
+the exact `dentotime-demo` project name and `docker-compose.demo.yml` filename;
+never substitute the review/production stack or add `.env.server`.
+
+```bash
+sudo docker compose -p dentotime-demo -f docker-compose.demo.yml down --volumes
+sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose -p dentotime-demo -f docker-compose.demo.yml up -d --build --wait --wait-timeout 180
+```
+
+### Private remote demo via SSH (optional)
+
+The demo stays bound to the server's loopback interface. On your own computer,
+open a separate PowerShell or terminal window and create an SSH tunnel. Replace
+`YOUR_SERVER_IP` and, if necessary, the SSH username `ubuntu`:
+
+```powershell
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:3100:127.0.0.1:3100 -L 127.0.0.1:19000:127.0.0.1:19000 ubuntu@YOUR_SERVER_IP
+```
+
+After SSH authentication, a successful tunnel stays open without returning a
+shell prompt. Leave that window open, then browse to
+<http://localhost:3100/login> on your own computer. Port `19000` is also forwarded
+because file uploads/downloads use MinIO. Use `localhost`, not the server IP or
+`127.0.0.1`, in the browser so the configured origins match. Press Ctrl+C in the
+tunnel window when finished. No public firewall rule for ports 3100/19000 is needed.
+
+If SSH reports that an address is already in use, stop your **local** demo (using
+the stop command for your shell) or use another computer; the local ports must be
+free. Do not change only the forwarded port: the app's origins also depend on it.
+For direct public access, use the public launcher above, which replaces the
+known local signing/storage keys. Never copy demo volumes to production.
 
 ## Accounts
 

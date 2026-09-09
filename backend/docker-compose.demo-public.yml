@@ -1,0 +1,51 @@
+# Opt-in public HTTP demo. Always combine with docker-compose.demo.yml.
+# Use scripts/start-public-demo.sh to create private keys before publishing.
+# Requires Compose >= 2.24.4 for !override (do not merge duplicate port bindings).
+
+x-public-environment: &public-environment
+  SECRET_KEY: ${DEMO_SECRET_KEY:?Run scripts/start-public-demo.sh first}
+  JWT_SIGNING_KEY: ${DEMO_JWT_SIGNING_KEY:?Run scripts/start-public-demo.sh first}
+  OTP_HASH_KEY: ${DEMO_OTP_HASH_KEY:?Run scripts/start-public-demo.sh first}
+  CAPTCHA_HASH_KEY: ${DEMO_CAPTCHA_HASH_KEY:?Run scripts/start-public-demo.sh first}
+  AWS_SECRET_ACCESS_KEY: ${DEMO_STORAGE_SECRET_KEY:?Run scripts/start-public-demo.sh first}
+  ALLOWED_HOSTS: localhost,127.0.0.1,backend,${DEMO_PUBLIC_HOST:?Set the public IPv4 address or hostname}
+  CORS_ALLOWED_ORIGINS: http://${DEMO_PUBLIC_HOST}:3100
+  CSRF_TRUSTED_ORIGINS: http://${DEMO_PUBLIC_HOST}:3100
+  AWS_S3_PUBLIC_ENDPOINT_URL: http://${DEMO_PUBLIC_HOST}:19000
+
+services:
+  backend:
+    environment: *public-environment
+    restart: unless-stopped
+  file-scanner:
+    environment: *public-environment
+    restart: unless-stopped
+  demo-setup:
+    environment: *public-environment
+  demo-postgres:
+    restart: unless-stopped
+  demo-redis:
+    restart: unless-stopped
+  demo-minio:
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_PASSWORD: ${DEMO_STORAGE_SECRET_KEY:?Run scripts/start-public-demo.sh first}
+      MINIO_API_CORS_ALLOW_ORIGIN: http://${DEMO_PUBLIC_HOST}:3100
+    ports: !override
+      - "0.0.0.0:19000:9000"
+      - "127.0.0.1:19001:9001"
+  demo-storage-init:
+    environment:
+      DEMO_STORAGE_SECRET_KEY: ${DEMO_STORAGE_SECRET_KEY:?Run scripts/start-public-demo.sh first}
+    command: ['mc alias set demo http://demo-minio:9000 dentotime-demo "$${DEMO_STORAGE_SECRET_KEY}" && mc mb --ignore-existing demo/dentotime-demo']
+  frontend:
+    # Keep a public-origin build separate from the local-only demo image.
+    image: dentotime-demo-public-frontend
+    restart: unless-stopped
+    build:
+      args:
+        NEXT_PUBLIC_STORAGE_ORIGIN: http://${DEMO_PUBLIC_HOST}:19000
+    environment:
+      NEXT_PUBLIC_STORAGE_ORIGIN: http://${DEMO_PUBLIC_HOST}:19000
+    ports: !override
+      - "0.0.0.0:3100:3000"
