@@ -1,4 +1,5 @@
-# Local-only demonstration. Independent from docker-compose.http.yml and .env.server.
+# Local-only by default. Independent from docker-compose.http.yml and .env.server.
+# Public opt-in: scripts/start-public-demo.sh + docker-compose.demo-public.yml.
 name: dentotime-demo
 
 x-backend: &backend

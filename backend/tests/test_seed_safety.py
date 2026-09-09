@@ -12,6 +12,34 @@ HISTORICAL_SEED_PHONES = (
 )
 
 
+@pytest.mark.parametrize("environment", ["development", "production"])
+@pytest.mark.parametrize(
+    "command,options",
+    [
+        ("seed_rating_demo", {"password": "DemoRating123!"}),
+        ("populate_db", {"confirm_destructive": True}),
+    ],
+)
+def test_retired_seeds_offer_cross_platform_setup_without_database_access(
+    monkeypatch, environment, command, options
+):
+    # No django_db marker: even an attempted database query must fail this test.
+    monkeypatch.setenv("DJANGO_ENVIRONMENT", environment)
+    with pytest.raises(CommandError, match="retired; no data was changed") as error:
+        call_command(command, **options)
+
+    message = str(error.value)
+    assert "From the host backend/ directory" in message
+    assert (
+        "\ndocker compose -p dentotime-demo -f docker-compose.demo.yml "
+        "up -d --build --wait --wait-timeout 180\n"
+    ) in message
+    assert "docs/demo.md" in message
+    assert "Ubuntu/Bash" in message
+    assert "Windows/PowerShell" in message
+    assert "Do not use docker-compose.http.yml or .env.server" in message
+
+
 @pytest.mark.django_db
 def test_historical_seed_accounts_are_not_login_capable():
     seeded_accounts = User.objects.filter(phone_number__in=HISTORICAL_SEED_PHONES)

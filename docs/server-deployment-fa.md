@@ -7,6 +7,8 @@
 
 این راهنما برای سرور فعلی با IP `95.38.185.165` و اجرای HTTP روی پورت `3000` نوشته شده است. تمام imageهای backend و frontend روی خود سرور و از سورس همان commit ساخته می‌شوند؛ هیچ فایل `.tar`، دستور `docker save` یا `docker load` لازم نیست.
 
+دستورهای این راهنما برای Bash روی Ubuntu هستند. هر دستور Docker را به‌صورت یک خط کامل کپی کنید؛ شکستن ظاهری خط در نمایشگر نیاز به افزودن علامت `+` ندارد. این علامت جداکنندهٔ آرگومان‌ها یا ادامهٔ خط در Bash نیست.
+
 ## معماری اجرا
 
 - سایت و API از طریق frontend روی `http://95.38.185.165:3000` در دسترس‌اند.
@@ -145,9 +147,9 @@ frontend
 ```bash
 cd /opt/dentotime/backend
 
-sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose +  --env-file .env.server +  -f docker-compose.http.yml +  build --pull backend backend-migrate file-scanner
+sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.server -f docker-compose.http.yml build --pull backend backend-migrate file-scanner
 
-sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose +  --env-file .env.server +  -f docker-compose.http.yml +  build --pull frontend
+sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.server -f docker-compose.http.yml build --pull frontend
 ```
 
 Dockerfile فرانت‌اند `npm ci --include=optional` را اجرا می‌کند تا binaryهای Linux/musl مربوط به LightningCSS و Tailwind هنگام build روی Ubuntu حذف نشوند. build باید با عبارت `Compiled successfully` تمام شود.
@@ -159,9 +161,9 @@ containerهای one-shot قبلی را حذف کنید تا migration و MinIO i
 ```bash
 cd /opt/dentotime/backend
 
-sudo docker compose +  --env-file .env.server +  -f docker-compose.http.yml +  rm -f backend-migrate minio-init
+sudo docker compose --env-file .env.server -f docker-compose.http.yml rm -f backend-migrate minio-init
 
-sudo docker compose +  --env-file .env.server +  -f docker-compose.http.yml +  up -d
+sudo docker compose --env-file .env.server -f docker-compose.http.yml up -d
 ```
 
 وضعیت:
@@ -177,13 +179,57 @@ sudo docker compose --env-file .env.server -f docker-compose.http.yml logs --no-
 
 ساخت مدیر سیستم توسط `backend-migrate` و فرمان `ensure_system_admin --if-configured` انجام می‌شود.
 
-اگر همین محیط باید داده‌های نمایشی پزشکان، امتیازها و کاربران تستی را داشته باشد، یک بار اجرا کنید:
+برای نمایش پزشکان، امتیازها و کاربران تستی، [راهنمای محیط دموی مستقل](../backend/docs/demo.md) را دنبال کنید؛ داده‌های نمایشی را وارد دیتابیس production نکنید. دستورهای `populate_db` و `seed_rating_demo` بازنشسته شده‌اند و دیگر داده‌ای ایجاد نمی‌کنند.
+
+### دموی عمومی روی Ubuntu، بدون تونل SSH
+
+برای باز شدن مستقیم سایت در `http://37.32.37.248:3100/login`، ابتدا فایل‌های جدید `docker-compose.demo-public.yml` و `scripts/start-public-demo.sh` را به مخزن روی سرور منتقل کنید. سپس از پوشهٔ `backend/`، مثلاً `~/dentotime/backend`، اجرا کنید:
 
 ```bash
-sudo docker compose +  --env-file .env.server +  -f docker-compose.http.yml +  run --rm --no-deps backend +  python manage.py seed_rating_demo --password 'DemoRating123!'
+sudo bash scripts/start-public-demo.sh 37.32.37.248
 ```
 
-برای دیتابیس واقعی production این seed را اجرا نکنید.
+این دستور کلیدهای خصوصی مستقل را در `.env.demo-public` با دسترسی `600` می‌سازد و نگه می‌دارد، origin سایت و فایل‌ها را با IP عمومی هماهنگ می‌کند و پورت سایت را روی `0.0.0.0:3100` منتشر می‌کند. کلیدهای JWT و فضای ذخیره‌سازی پیش‌فرض محلی در دموی عمومی استفاده نمی‌شوند. همان پروژه و volumeهای مستقل دمو حفظ می‌شوند؛ هیچ دیتابیسی reset یا حذف نمی‌شود و `.env.server` خوانده نمی‌شود. رمز اولیهٔ حساب‌ها همچنان `DentoDemo2026!` است.
+
+در firewall پنل ارائه‌دهندهٔ سرور، ورودی TCP پورت‌های `3100` برای سایت و `19000` برای آپلود/دریافت فایل را مجاز کنید. پورت‌های دیتابیس، Redis، backend و کنسول MinIO نباید عمومی شوند. Docker ممکن است قواعد UFW را دور بزند؛ محدودیت شبکه را در firewall ارائه‌دهنده هم بررسی کنید. جزئیات در [راهنمای دموی عمومی](../backend/docs/demo.md#public-demo-on-ubuntu-no-ssh-tunnel) آمده است.
+
+```bash
+sudo docker compose --env-file .env.demo-public -p dentotime-demo -f docker-compose.demo.yml -f docker-compose.demo-public.yml port frontend 3000
+curl -fsS http://127.0.0.1:3100/api/v1/health/
+```
+
+خروجی دستور port باید `0.0.0.0:3100` باشد. سپس آدرس عمومی را در مرورگر هر دستگاهی باز کنید؛ نیازی به Windows، localhost یا تونل SSH نیست. برای بروزرسانی‌های بعدی هم launcher عمومی را اجرا کنید؛ فرمان محلی تنظیم‌ها را به حالت خصوصی برمی‌گرداند.
+
+این محیط عمداً عمومی است و حساب‌های مدیر آن نیز رمز منتشرشده دارند؛ هر بازدیدکننده می‌تواند داده‌های نمایشی را تغییر دهد. اطلاعات واقعی بیمار، رمز شخصی یا secret تولید را وارد نکنید. HTTP رمزگذاری ندارد و scanner دمو محافظت واقعی در برابر بدافزار نیست. این تنظیمات برای production مناسب نیستند؛ برای نمایش طولانی‌مدت یا محدود، HTTPS و کنترل دسترسی اضافه کنید.
+
+### دموی خصوصی (جایگزین اختیاری)
+
+اگر نمایش خصوصی می‌خواهید، از پوشهٔ `backend/` دستورهای زیر را اجرا کنید. فایل `Start-Demo.ps1` مخصوص PowerShell است و در Bash اجرا نمی‌شود:
+
+```bash
+sudo docker compose -p dentotime-demo -f docker-compose.demo.yml config --quiet
+sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose -p dentotime-demo -f docker-compose.demo.yml up -d --build --wait --wait-timeout 180
+sudo docker compose -p dentotime-demo -f docker-compose.demo.yml ps -a
+sudo docker compose -p dentotime-demo -f docker-compose.demo.yml logs --no-color --tail=100 demo-setup
+```
+
+سرویس `demo-setup` خودش migration و `seed_demo` را اجرا می‌کند و باید با کد صفر تمام شود؛ نیازی به اجرای seed جداگانه نیست. این محیط از دیتابیس و volumeهای مستقل استفاده می‌کند و `.env.server` را نباید به دستورهای آن اضافه کنید. رمز اولیهٔ حساب‌ها `DentoDemo2026!` است، نه `DemoRating123!`. شماره‌ها و سناریوها در راهنمای دمو آمده‌اند. اجرای دوباره تغییرهای نمایشی موجود را حفظ می‌کند؛ دستورهای توقف و reset مخصوص Bash نیز در همان راهنما هستند.
+
+در این حالت خصوصی، دمو فقط روی loopback سرور در دسترس است. برای دسترسی از کامپیوتر خود، در یک پنجرهٔ ترمینال جداگانه تونل SSH زیر را باز نگه دارید؛ در صورت تفاوت، نام کاربری و IP را اصلاح کنید:
+
+```powershell
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:3100:127.0.0.1:3100 -L 127.0.0.1:19000:127.0.0.1:19000 ubuntu@37.32.37.248
+```
+
+سپس در مرورگر کامپیوتر خود `http://localhost:3100/login` را باز کنید. انتقال پورت `19000` برای آپلود و دریافت فایل‌ها لازم است. اگر دموی محلی همین پورت‌ها را اشغال کرده است، ابتدا آن را متوقف کنید. برای این حالت خصوصی نیازی به پورت عمومی نیست.
+
+پیش از انتقال دیتابیس موجود به production، وجود داده‌های نمایشی شناخته‌شده را بررسی کنید:
+
+```bash
+sudo docker compose --env-file .env.server -f docker-compose.http.yml run --rm --no-deps backend python manage.py check_demo_data
+```
+
+این بررسی فقط خواندنی است. اگر با کد غیرصفر متوقف شد، داده‌های گزارش‌شده را بررسی کنید و تا تعیین تکلیف آن‌ها انتشار را ادامه ندهید؛ هیچ رکوردی به‌صورت خودکار حذف نمی‌شود.
 
 ## ۷. firewall
 
@@ -231,13 +277,13 @@ curl -fsS http://127.0.0.1:3000/api/v1/doctors/arman-hosseini/reviews/
 ## ۹. مشاهده logها
 
 ```bash
-sudo docker compose --env-file .env.server -f docker-compose.http.yml +  logs -f --tail=200 frontend backend file-scanner
+sudo docker compose --env-file .env.server -f docker-compose.http.yml logs -f --tail=200 frontend backend file-scanner
 ```
 
 برای migration:
 
 ```bash
-sudo docker compose --env-file .env.server -f docker-compose.http.yml +  logs --no-color --tail=300 backend-migrate
+sudo docker compose --env-file .env.server -f docker-compose.http.yml logs --no-color --tail=300 backend-migrate
 ```
 
 ## ۱۰. بروزرسانی امن
@@ -246,7 +292,7 @@ sudo docker compose --env-file .env.server -f docker-compose.http.yml +  logs --
 
 ```bash
 mkdir -p /opt/dentotime/backups
-sudo docker compose --env-file /opt/dentotime/backend/.env.server +  -f /opt/dentotime/backend/docker-compose.http.yml +  exec -T postgres pg_dump -U dentotime -d dentotime +  | gzip > /opt/dentotime/backups/dentotime-before-update.sql.gz
+sudo docker compose --env-file /opt/dentotime/backend/.env.server -f /opt/dentotime/backend/docker-compose.http.yml exec -T postgres pg_dump -U dentotime -d dentotime | gzip > /opt/dentotime/backups/dentotime-before-update.sql.gz
 ```
 
 سپس:
@@ -257,10 +303,10 @@ git status --short
 git pull --ff-only
 
 cd backend
-sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.server -f docker-compose.http.yml +  build --pull backend backend-migrate file-scanner
-sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.server -f docker-compose.http.yml +  build --pull frontend
+sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.server -f docker-compose.http.yml build --pull backend backend-migrate file-scanner
+sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.server -f docker-compose.http.yml build --pull frontend
 
-sudo docker compose --env-file .env.server -f docker-compose.http.yml +  rm -f backend-migrate minio-init
+sudo docker compose --env-file .env.server -f docker-compose.http.yml rm -f backend-migrate minio-init
 sudo docker compose --env-file .env.server -f docker-compose.http.yml up -d
 ```
 
@@ -280,7 +326,7 @@ grep -n 'npm ci --include=optional' /opt/dentotime/frontend/Dockerfile
 
 ```bash
 cd /opt/dentotime/backend
-sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.server -f docker-compose.http.yml +  build --no-cache frontend
+sudo env COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.server -f docker-compose.http.yml build --no-cache frontend
 ```
 
 ### build روی سرور با exit 137 متوقف می‌شود
@@ -307,21 +353,19 @@ sudo docker compose --env-file .env.server -f docker-compose.http.yml rm -f back
 sudo docker compose --env-file .env.server -f docker-compose.http.yml up backend-migrate
 ```
 
-### فرمان seed_rating_demo وجود ندارد
+### فرمان seed_rating_demo خطای retired می‌دهد
 
-سورس یا image backend قدیمی است. commit را بررسی و backend را دوباره build کنید:
+این رفتار عمدی است؛ دستورهای seed قدیمی برای جلوگیری از ورود دادهٔ نمایشی به محیط واقعی غیرفعال شده‌اند. rebuild کردن backend آن‌ها را فعال نمی‌کند. برای اجرای سناریوهای نمایشی از [محیط دموی مستقل](../backend/docs/demo.md) استفاده کنید و برای بررسی دیتابیس پیش از production، دستور `check_demo_data` در بخش ۶ را اجرا کنید.
 
-```bash
-git rev-parse --short HEAD
-sudo docker compose --env-file .env.server -f docker-compose.http.yml build backend
-sudo docker compose --env-file .env.server -f docker-compose.http.yml +  run --rm --no-deps backend python manage.py help | grep seed_rating_demo
-```
+### اجرای Start-Demo.ps1 با خطای command not found متوقف می‌شود
+
+اگر در Bash روی Ubuntu هستید، دستورهای PowerShell مانند `.\scripts\Start-Demo.ps1` و گزینهٔ `-Reset` قابل اجرا نیستند. از دستورهای Docker Compose بخش ۶ و قسمت «Ubuntu / Bash» راهنمای دمو استفاده کنید. reset اختیاری است و داده‌ها و فایل‌های همان دموی مستقل را حذف می‌کند؛ برای رفع خطای seed قدیمی نیازی به reset نیست.
 
 ### صفحه باز می‌شود ولی پزشکان، نظرها یا login کار نمی‌کنند
 
 ```bash
 sudo docker compose --env-file .env.server -f docker-compose.http.yml ps -a
-sudo docker compose --env-file .env.server -f docker-compose.http.yml +  logs --no-color --tail=300 frontend backend backend-migrate
+sudo docker compose --env-file .env.server -f docker-compose.http.yml logs --no-color --tail=300 frontend backend backend-migrate
 curl -i http://127.0.0.1:3000/api/v1/health/
 ```
 
